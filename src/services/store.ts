@@ -195,6 +195,52 @@ export class HouseStore {
     return rows.map(mapHouse);
   }
 
+  // ---- Insulti ----
+
+  /** Gli insulti scritti da un coinquilino, per gravita'. Sono segreti: si mostrano solo al loro autore. */
+  async listMyInsults(houseId: number, authorId: number): Promise<Record<TaskSeverity, string[]>> {
+    const rows = await this.db.all(
+      "SELECT severity, text FROM insults WHERE house_id = ? AND author_id = ? ORDER BY id",
+      [houseId, authorId],
+    );
+    const result: Record<TaskSeverity, string[]> = { low: [], medium: [], high: [] };
+    for (const row of rows) {
+      result[String(row.severity) as TaskSeverity].push(String(row.text));
+    }
+    return result;
+  }
+
+  /** Quanti insulti ha scritto in totale la casa per ogni gravita' (solo il numero, non il testo). */
+  async countInsults(houseId: number): Promise<Record<TaskSeverity, number>> {
+    const rows = await this.db.all("SELECT severity, COUNT(*) AS n FROM insults WHERE house_id = ? GROUP BY severity", [houseId]);
+    const result: Record<TaskSeverity, number> = { low: 0, medium: 0, high: 0 };
+    for (const row of rows) {
+      result[String(row.severity) as TaskSeverity] = Number(row.n);
+    }
+    return result;
+  }
+
+  /** Sostituisce gli insulti di un autore per una gravita' (lista vuota = li cancella). */
+  async setMyInsults(houseId: number, authorId: number, severity: TaskSeverity, messages: string[]): Promise<void> {
+    await this.db.run("DELETE FROM insults WHERE house_id = ? AND author_id = ? AND severity = ?", [houseId, authorId, severity]);
+    const now = new Date().toISOString();
+    for (const text of messages) {
+      await this.db.run(
+        "INSERT INTO insults (house_id, author_id, severity, text, created_at) VALUES (?, ?, ?, ?, ?)",
+        [houseId, authorId, severity, text, now],
+      );
+    }
+  }
+
+  /** Insulti utilizzabili contro `targetId`: quelli degli altri coinquilini (mai i suoi contro se stesso). */
+  async insultPool(houseId: number, severity: TaskSeverity, targetId: number | null): Promise<string[]> {
+    const rows = await this.db.all(
+      "SELECT text FROM insults WHERE house_id = ? AND severity = ? AND (? IS NULL OR author_id <> ?)",
+      [houseId, severity, targetId, targetId],
+    );
+    return rows.map((row) => String(row.text));
+  }
+
   // ---- Promemoria giornalieri ----
 
   /** Impostazioni di buongiorno e serale, con i valori predefiniti dove la casa non ha scelto. */
@@ -248,15 +294,6 @@ export class HouseStore {
         new Date().toISOString(),
       ],
     );
-  }
-
-  /** Attivita' segnate come fatte dal momento indicato in poi (per il riepilogo serale). */
-  async listDoneSince(houseId: number, since: Date): Promise<LogEntry[]> {
-    const rows = await this.db.all(
-      `${logSelect} WHERE l.house_id = ? AND l.kind = 'done' AND l.created_at >= ? ORDER BY l.created_at, l.id`,
-      [houseId, since.toISOString()],
-    );
-    return rows.map(mapLogEntry);
   }
 
   async setHouseNotifyChanges(houseId: number, notifyChanges: boolean): Promise<void> {

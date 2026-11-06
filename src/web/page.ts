@@ -74,6 +74,9 @@ const PAGE_TEMPLATE = `<!doctype html>
   .switch input:checked + span:before { transform: translateX(18px); }
   .bubble { background: var(--bg); border: 1px solid var(--line); border-radius: 12px 12px 12px 4px; padding: 10px 12px; white-space: pre-wrap; font-size: .88rem; line-height: 1.45; margin-top: 6px; }
   .bubble-label { font-size: .75rem; color: var(--muted); margin-top: 10px; }
+  .insult-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+  .insult-row input { flex: 1; min-width: 0; }
+  .insult-row button { padding: 6px 10px; }
   .head { align-items: flex-start; flex-wrap: nowrap; }
   .head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; margin-top: 10px; }
   .head-side select { max-width: 150px; }
@@ -135,7 +138,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   var savedRange = null;
   try { savedRange = localStorage.getItem("tlRange"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", tlExpanded: false, digestDraft: {} };
+    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", tlExpanded: false, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -605,8 +608,8 @@ const PAGE_TEMPLATE = `<!doctype html>
   // ---------- Promemoria giornalieri ----------
   var DIGEST_TITLES = { morning: "☀️ Buongiorno", evening: "🌙 Riepilogo serale" };
   var DIGEST_HINTS = {
-    morning: "Cosa e' in ritardo e cosa scade oggi.",
-    evening: "Cosa e' stato fatto oggi, cosa e' in ritardo e cosa scade nelle prossime 24 ore."
+    morning: "Cosa e' in ritardo e cosa scade oggi, piu' le prossime 3 attivita' se vuoi portarti avanti.",
+    evening: "Cosa dovrai fare domani."
   };
   var NL2 = String.fromCharCode(10) + String.fromCharCode(10);
 
@@ -667,6 +670,69 @@ const PAGE_TEMPLATE = `<!doctype html>
     return card;
   }
 
+  // ---------- Insulti ----------
+  var SEV_SHORT = { low: "Poco importante", medium: "Medio", high: "Importante" };
+
+  function fillInsultPreview(template) {
+    return template.split("{nome}").join(state.me.user.displayName).split("{attivita}").join("Pulire il bagno").split("{attività}").join("Pulire il bagno");
+  }
+
+  function insultsCard() {
+    var sev = state.insultSev;
+    var info = state.data.insults.filter(function (x) { return x.severity === sev; })[0];
+    var draft = state.insultDraft[sev];
+    if (!draft) { draft = { messages: info.mine.slice(), dirty: false }; state.insultDraft[sev] = draft; }
+
+    var seg = h("div", { class: "seg" });
+    ["low", "medium", "high"].forEach(function (k) {
+      seg.appendChild(h("button", { class: k === sev ? "on" : "", onclick: function () { state.insultSev = k; render(); } }, SEV_SHORT[k]));
+    });
+
+    var list = h("div", {});
+    var save = h("button", { class: "primary" }, "Salva");
+    var example = h("div", { class: "bubble" });
+    var someone = (state.data.members.filter(function (m) { return m.id !== state.data.viewerId; })[0] || { displayName: "Anna" }).displayName;
+    function refresh() {
+      save.disabled = !draft.dirty;
+      var first = draft.messages.filter(function (m) { return m.trim(); })[0] || info.defaults[0];
+      example.textContent = "😬 Pulire il bagno · scaduta · tocca a " + someone + String.fromCharCode(10) +
+        first.split("{nome}").join(someone).split("{attivita}").join("Pulire il bagno").split("{attività}").join("Pulire il bagno");
+    }
+    function drawList() {
+      list.replaceChildren();
+      if (!draft.messages.length) list.appendChild(h("p", { class: "muted", style: "margin:8px 0 0" }, "Non hai ancora scritto insulti per questa gravita'."));
+      draft.messages.forEach(function (msg, i) {
+        list.appendChild(h("div", { class: "insult-row" },
+          h("input", { type: "text", maxlength: "200", value: msg, placeholder: info.defaults[i % info.defaults.length], oninput: function (e) { draft.messages[i] = e.target.value; draft.dirty = true; refresh(); } }),
+          h("button", { class: "danger ghost", title: "Elimina", onclick: function () { draft.messages.splice(i, 1); draft.dirty = true; drawList(); refresh(); } }, "✕")
+        ));
+      });
+    }
+    drawList();
+    save.addEventListener("click", function () {
+      var payload = { insults: {} };
+      payload.insults[sev] = draft.messages;
+      api("PATCH", "/api/houses/" + state.houseId, payload).then(function (data) {
+        delete state.insultDraft[sev]; state.data = data; state.error = ""; render();
+      }).catch(fail);
+    });
+    refresh();
+
+    var others = info.byOthers === 0 ? "Gli altri non ne hanno ancora scritti: contro di te il bot usa quelli predefiniti."
+      : "Gli altri ne hanno scritti " + info.byOthers + " (segreti anche per te 🤫).";
+
+    return h("div", { class: "card" },
+      h("p", { class: "muted", style: "margin:0 0 10px" }, "🤫 Solo tu vedi i tuoi insulti. Quando un'attivita' scade (e al sollecito) il bot ne sceglie uno a caso tra quelli scritti dai coinquilini: i tuoi colpiscono gli altri, mai te. Scrivi {nome} per chi la doveva fare e {attivita} per l'attivita'."),
+      seg,
+      list,
+      h("button", { style: "margin-top:8px", onclick: function () { draft.messages.push(""); draft.dirty = true; drawList(); refresh(); } }, "+ Aggiungi"),
+      h("div", { class: "muted", style: "font-size:.8rem;margin-top:8px" }, others),
+      h("div", { class: "bubble-label" }, "Esempio"),
+      example,
+      h("div", { class: "row", style: "margin-top:10px" }, save)
+    );
+  }
+
   function viewHouse() {
     var members = h("ul", { class: "plain" });
     state.data.members.forEach(function (m) {
@@ -681,6 +747,8 @@ const PAGE_TEMPLATE = `<!doctype html>
       h("div", { class: "card" }, members),
       h("h2", {}, "Promemoria nel gruppo"),
       state.data.digests.map(digestCard),
+      h("h2", {}, "I tuoi insulti segreti"),
+      insultsCard(),
       h("h2", {}, "Avvisi"),
       h("div", { class: "card" },
         h("label", { class: "check" }, notify, "Avvisa il gruppo quando un'attivita' viene creata o modificata"),
@@ -711,7 +779,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     var header = h("div", { class: "row head" }, h("div", { class: "grow" }, h("h1", {}, state.data.house.name), h("div", { class: "muted" }, state.me.user.displayName)), side);
     if (state.me.houses.length > 1) {
       var select = h("select", { onchange: function (e) {
-        state.houseId = Number(e.target.value); state.data = null; state.editing = null; state.adding = false; state.digestDraft = {};
+        state.houseId = Number(e.target.value); state.data = null; state.editing = null; state.adding = false; state.digestDraft = {}; state.insultDraft = {};
         try { localStorage.setItem("house", String(state.houseId)); } catch (err) {}
         loadHouse();
       } });

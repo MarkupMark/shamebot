@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { runDueChecks } from "../src/services/scheduler.js";
+
+/** Scelta deterministica: sempre il primo insulto. */
+const first = <T>(items: T[]) => items[0];
 import { createTestStore, day } from "./helpers.js";
 
 describe("runDueChecks", () => {
@@ -16,22 +19,22 @@ describe("runDueChecks", () => {
       sent.push({ chatId, text });
     };
 
-    expect(await runDueChecks(store, send, new Date("2026-11-03T10:00:00.000Z"))).toBe(0);
+    expect(await runDueChecks(store, send, new Date("2026-11-03T10:00:00.000Z"), first)).toBe(0);
 
-    expect(await runDueChecks(store, send, new Date("2026-11-08T08:00:00.000Z"))).toBe(1);
+    expect(await runDueChecks(store, send, new Date("2026-11-08T08:00:00.000Z"), first)).toBe(1);
     expect(sent[0]?.chatId).toBe(-555);
     expect(sent[0]?.text).toBe("⏰ Pulire il bagno · tra 3h");
 
-    expect(await runDueChecks(store, send, new Date("2026-11-08T08:05:00.000Z"))).toBe(0);
+    expect(await runDueChecks(store, send, new Date("2026-11-08T08:05:00.000Z"), first)).toBe(0);
 
-    expect(await runDueChecks(store, send, new Date("2026-11-08T09:40:00.000Z"))).toBe(1);
+    expect(await runDueChecks(store, send, new Date("2026-11-08T09:40:00.000Z"), first)).toBe(1);
     expect(sent[1]?.text).toBe("⏰ Pulire il bagno · tra 30m");
 
-    expect(await runDueChecks(store, send, new Date("2026-11-08T10:30:00.000Z"))).toBe(1);
-    expect(sent[2]?.text).toBe("😬 Pulire il bagno · scaduta · ultima: Luca");
+    expect(await runDueChecks(store, send, new Date("2026-11-08T10:30:00.000Z"), first)).toBe(1);
+    expect(sent[2]?.text).toBe("😬 Pulire il bagno · scaduta · ultima: Luca\nragazzi, Pulire il bagno è IMPORTANTE. Vergognati 🔔");
 
-    expect(await runDueChecks(store, send, new Date("2026-11-09T11:00:00.000Z"))).toBe(1);
-    expect(sent[3]?.text).toBe("🚨 Pulire il bagno · ritardo 1g 1h · ultima: Luca");
+    expect(await runDueChecks(store, send, new Date("2026-11-09T11:00:00.000Z"), first)).toBe(1);
+    expect(sent[3]?.text).toBe("🚨 Pulire il bagno · ritardo 1g 1h · ultima: Luca\nragazzi, Pulire il bagno è IMPORTANTE. Vergognati 🔔");
     expect(sent.length).toBe(4);
   });
 
@@ -51,5 +54,38 @@ describe("runDueChecks", () => {
     const sent: string[] = [];
     expect(await runDueChecks(store, async (_chatId, text) => void sent.push(text), now)).toBe(1);
     expect(sent.length).toBe(1);
+  });
+
+  it("sceglie tra gli insulti scritti dagli altri coinquilini, mai da chi li riceve", async () => {
+    const { store } = createTestStore();
+    const luca = await store.upsertUser({ telegramId: 1, username: null, displayName: "Luca" });
+    const anna = await store.upsertUser({ telegramId: 2, username: null, displayName: "Anna" });
+    const created = new Date("2026-11-01T10:00:00.000Z");
+    const { house } = await store.getOrCreateHouse(-555, "Casa", luca.id, created);
+    await store.createTask(house.id, luca.id, "Umido", day, "low", created, null, { mode: "single", userIds: [luca.id] });
+    await store.setMyInsults(house.id, luca.id, "low", ["Insulto scritto da Luca"]);
+    await store.setMyInsults(house.id, anna.id, "low", ["{nome}, {attivita}! Puzza tutto."]);
+
+    // Tocca a Luca: il pool contiene solo l'insulto di Anna.
+    expect(await store.insultPool(house.id, "low", luca.id)).toEqual(["{nome}, {attivita}! Puzza tutto."]);
+    // Se tocca a chiunque valgono tutti.
+    expect((await store.insultPool(house.id, "low", null)).length).toBe(2);
+
+    const sent: string[] = [];
+    expect(await runDueChecks(store, async (_c, text) => void sent.push(text), new Date("2026-11-02T11:00:00.000Z"), first)).toBe(1);
+    expect(sent[0]).toBe("😬 Umido · scaduta · tocca a Luca\nLuca, Umido! Puzza tutto.");
+  });
+
+  it("senza insulti degli altri usa i predefiniti", async () => {
+    const { store } = createTestStore();
+    const luca = await store.upsertUser({ telegramId: 1, username: null, displayName: "Luca" });
+    const created = new Date("2026-11-01T10:00:00.000Z");
+    const { house } = await store.getOrCreateHouse(-555, "Casa", luca.id, created);
+    await store.createTask(house.id, luca.id, "Umido", day, "medium", created, null, { mode: "single", userIds: [luca.id] });
+    await store.setMyInsults(house.id, luca.id, "medium", ["Solo miei, non valgono contro di me"]);
+
+    const sent: string[] = [];
+    await runDueChecks(store, async (_c, text) => void sent.push(text), new Date("2026-11-02T11:00:00.000Z"), first);
+    expect(sent[0]).toBe("😬 Umido · scaduta · tocca a Luca\nLuca, Umido è scaduta. La casa ti guarda 👀");
   });
 });

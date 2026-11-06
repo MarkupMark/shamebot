@@ -2,13 +2,19 @@ import type { HouseStore } from "./store.js";
 import { getDueNotice } from "./policy.js";
 import { noticeMessage, safeSend, type SendToChat } from "./notify.js";
 import { runDigests } from "./digest.js";
+import { defaultInsults, fillInsult, randomPick, type Chooser } from "./insults.js";
 
 /**
  * Controlla tutte le attivita' e scrive nel gruppo della casa i promemoria e i solleciti dovuti.
  * Per ogni attivita' parte al massimo un messaggio per volta: le fasi saltate (es. dopo uno stop del bot)
  * vengono segnate come gestite senza essere inviate, cosi' non c'e' spam.
  */
-export async function runDueChecks(store: HouseStore, send: SendToChat, now: Date = new Date()): Promise<number> {
+export async function runDueChecks(
+  store: HouseStore,
+  send: SendToChat,
+  now: Date = new Date(),
+  pick: Chooser = randomPick,
+): Promise<number> {
   const tasks = await store.listTasksWithHouses();
   let sent = 0;
 
@@ -18,7 +24,18 @@ export async function runDueChecks(store: HouseStore, send: SendToChat, now: Dat
       continue;
     }
 
-    const delivered = await safeSend(send, task.house.chatId, noticeMessage(task, due.send.key, now));
+    let text = noticeMessage(task, due.send.key, now);
+    // Scadenza e sollecito sono "infrazioni": il bot aggiunge un insulto a caso tra quelli scritti dagli altri
+    // coinquilini (mai da chi lo riceve); se non ce ne sono usa i predefiniti.
+    if (due.send.key === "overdue" || due.send.key === "nudge") {
+      const pool = await store.insultPool(task.house.id, task.severity, task.assigneeId);
+      const template = pick(pool.length ? pool : defaultInsults[task.severity]);
+      if (template) {
+        text += `\n${fillInsult(template, task)}`;
+      }
+    }
+
+    const delivered = await safeSend(send, task.house.chatId, text);
     if (delivered) {
       await store.markNoticesHandled(task.id, due.markAsHandled, now);
       sent += 1;

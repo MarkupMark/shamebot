@@ -30,33 +30,62 @@ describe("Fuso orario", () => {
 });
 
 describe("Testo dei promemoria", () => {
-  it("buongiorno: ritardi e scadenze di oggi, con frase personalizzata", async () => {
+  it("buongiorno: ritardi, scadenze di oggi e le prossime 3 se vuoi portarti avanti", async () => {
     const { store, house, luca } = await setup();
-    const now = new Date("2026-11-06T08:00:00.000Z"); // 09:00 a Roma
+    const now = new Date("2026-11-06T08:00:00.000Z"); // venerdi' 6, 09:00 a Roma
     await store.createTask(house.id, luca.id, "Umido", day, "high", new Date(now.getTime() - day - 5 * hour));
     await store.createTask(house.id, luca.id, "Lavatrice", 9 * hour, "medium", now, null, { mode: "single", userIds: [luca.id] });
-    await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium", now);
+    await store.createTask(house.id, luca.id, "Pavimenti", day + 2 * hour, "medium", now); // sabato 11:00
+    await store.createTask(house.id, luca.id, "Bagno", 5 * day, "medium", now); // mercoledi' 11
+    await store.createTask(house.id, luca.id, "Vetri", 10 * day, "low", now); // lunedi' 16
+    await store.createTask(house.id, luca.id, "Frigo", 30 * day, "low", now); // oltre le prime 3
 
-    const tasks = await store.listTasks(house.id);
-    const message = buildDigest("morning", { intro: "Sveglia!" }, tasks, [], now, tz);
+    const message = buildDigest("morning", { intro: "Sveglia!" }, await store.listTasks(house.id), now, tz);
     expect(message.empty).toBe(false);
-    expect(message.text).toBe(["Sveglia!", "", "In ritardo", "• Umido · da 5h", "", "Oggi", "• Lavatrice · entro le 18:00 · 👤 Luca"].join("\n"));
+    expect(message.text).toBe(
+      [
+        "Sveglia!",
+        "",
+        "In ritardo",
+        "• Umido · da 5h",
+        "",
+        "Oggi",
+        "• Lavatrice · entro le 18:00 · 👤 Luca",
+        "",
+        "Se vuoi fare altro oggi:",
+        "• Pavimenti · domani entro le 11:00",
+        "• Bagno · entro mer 11",
+        "• Vetri · entro lun 16",
+      ].join("\n"),
+    );
   });
 
-  it("serale: fatto oggi e prossime 24 ore; vuoto se non c'e' nulla", async () => {
+  it("buongiorno senza nulla di oggi: e' 'vuoto' ma suggerisce comunque le prossime", async () => {
+    const { store, house, luca } = await setup();
+    const now = new Date("2026-11-06T08:00:00.000Z");
+    await store.createTask(house.id, luca.id, "Bagno", 5 * day, "medium", now);
+
+    const message = buildDigest("morning", { intro: null }, await store.listTasks(house.id), now, tz);
+    expect(message.empty).toBe(true);
+    expect(message.text).toBe(
+      ["☀️ Buongiorno! Ecco cosa c'è da fare oggi", "", "Oggi niente in scadenza 🎉", "", "Se vuoi fare altro oggi:", "• Bagno · entro mer 11"].join("\n"),
+    );
+  });
+
+  it("serale: solo cosa dovrai fare domani, senza ritardi ne' cose fatte oggi", async () => {
     const { store, house, luca } = await setup();
     const now = new Date("2026-11-06T20:00:00.000Z"); // 21:00 a Roma
-    const task = await store.createTask(house.id, luca.id, "Lavatrice", day, "medium", new Date("2026-11-06T09:00:00.000Z"));
-    await store.completeTask(house.id, task.id, luca.id, new Date("2026-11-06T10:00:00.000Z"));
+    await store.createTask(house.id, luca.id, "Umido", day, "high", new Date("2026-11-04T10:00:00.000Z")); // in ritardo
+    await store.createTask(house.id, luca.id, "Lavatrice", day, "medium", new Date("2026-11-06T09:00:00.000Z")); // domani 10:00
+    await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium", now); // tra una settimana
 
-    const tasks = await store.listTasks(house.id);
-    const done = await store.listDoneSince(house.id, localMidnight(now, tz));
-    const message = buildDigest("evening", { intro: null }, tasks, done, now, tz);
-    expect(message.text).toBe(
-      ["🌙 Riepilogo della giornata", "", "Fatto oggi", "✅ Lavatrice · Luca", "", "Prossime 24 ore", "• Lavatrice · domani entro le 11:00"].join("\n"),
-    );
+    const message = buildDigest("evening", { intro: null }, await store.listTasks(house.id), now, tz);
+    expect(message).toEqual({ text: ["🌙 Ecco cosa dovrai fare domani", "", "Domani", "• Lavatrice · entro le 10:00"].join("\n"), empty: false });
 
-    expect(buildDigest("morning", { intro: null }, [], [], now, tz)).toMatchObject({ empty: true });
+    expect(buildDigest("evening", { intro: null }, [], now, tz)).toEqual({
+      text: ["🌙 Ecco cosa dovrai fare domani", "", "Domani niente in scadenza 🎉"].join("\n"),
+      empty: true,
+    });
   });
 });
 

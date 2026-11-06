@@ -162,3 +162,25 @@ describe("Promemoria dal portale", () => {
     expect((await call(lucaSession, "PATCH", `/api/houses/${house.id}`, { digests: { pranzo: { enabled: true } } })).status).toBe(400);
   });
 });
+
+describe("Insulti dal portale", () => {
+  it("ognuno vede e modifica solo i propri; degli altri vede solo quanti sono", async () => {
+    const { store, lucaSession, annaSession, house, anna, call } = await setup();
+    await store.addMember(house.id, anna.id);
+
+    const saved = await call(lucaSession, "PATCH", `/api/houses/${house.id}`, { insults: { high: ["  {nome}, vergogna!  ", ""] } });
+    expect(saved.status).toBe(200);
+    expect(saved.json.insults[2]).toMatchObject({ severity: "high", mine: ["{nome}, vergogna!"], byOthers: 0 });
+
+    const annaView = await call(annaSession, "GET", `/api/houses/${house.id}`);
+    expect(annaView.json.insults[2]).toMatchObject({ mine: [], byOthers: 1 });
+    expect(JSON.stringify(annaView.json)).not.toContain("vergogna");
+
+    // Anna non puo' toccare quelli di Luca: salva i suoi e quelli di Luca restano.
+    await call(annaSession, "PATCH", `/api/houses/${house.id}`, { insults: { high: [] } });
+    const lucaView = await call(lucaSession, "GET", `/api/houses/${house.id}`);
+    expect(lucaView.json.insults[2].mine).toEqual(["{nome}, vergogna!"]);
+
+    expect((await call(lucaSession, "PATCH", `/api/houses/${house.id}`, { insults: { altissima: ["x"] } })).status).toBe(400);
+  });
+});

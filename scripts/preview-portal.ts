@@ -8,6 +8,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { renderAppPage } from "../src/web/page.js";
 import { renderContributePage } from "../src/web/contribute.js";
+import { defaultInsults } from "../src/services/insults.js";
 
 const port = Number(process.env.PORT ?? 8790);
 
@@ -16,9 +17,13 @@ const digests: Record<string, { enabled: boolean; time: string; intro: string | 
   morning: { enabled: true, time: "09:00", intro: null, skipIfEmpty: true },
   evening: { enabled: false, time: "21:00", intro: null, skipIfEmpty: true },
 };
+// I "tuoi" insulti; quelli degli altri coinquilini sono simulati solo come numero (sono segreti).
+const insults: Record<string, string[]> = { low: [], medium: ["{nome}, {attivita} ti aspetta da ore"], high: [] };
+const insultsByOthers: Record<string, number> = { low: 0, medium: 2, high: 5 };
+
 const digestText = {
-  morning: { intro: "☀️ Buongiorno! Ecco cosa c'è da fare oggi", body: "In ritardo\n• Buttare l'umido · da 5h · 👤 Tu\n\nOggi\n• Lavatrice · entro le 21:00 · 👤 Anna" },
-  evening: { intro: "🌙 Riepilogo della giornata", body: "Fatto oggi\n✅ Lavatrice · Anna\n\nAncora in ritardo\n• Buttare l'umido · da 5h · 👤 Tu\n\nProssime 24 ore\n• Lavatrice · domani entro le 19:00 · 👤 Anna" },
+  morning: { intro: "☀️ Buongiorno! Ecco cosa c'è da fare oggi", body: "In ritardo\n• Buttare l'umido · da 5h · 👤 Tu\n\nOggi\n• Lavatrice · entro le 21:00 · 👤 Anna\n\nSe vuoi fare altro oggi:\n• Pavimenti · entro dom 8\n• Pulire il bagno · entro mer 11 · 👤 Marco\n• Superfici cucina · entro gio 12" },
+  evening: { intro: "🌙 Ecco cosa dovrai fare domani", body: "Domani\n• Pavimenti · entro le 14:00" },
 };
 const H = 3_600_000;
 const D = 24 * H;
@@ -48,6 +53,12 @@ function buildData() {
       previewEmpty: false,
     })),
     timezone: "Europe/Rome",
+    insults: (["low", "medium", "high"] as const).map((severity) => ({
+      severity,
+      mine: insults[severity],
+      byOthers: insultsByOthers[severity],
+      defaults: defaultInsults[severity],
+    })),
     log: [
       { id: 1, houseId: 1, userId: 2, userName: "Anna", taskId: 2, taskName: "Lavatrice", kind: "done", detail: null, restorable: false, createdAt: iso(-3 * H) },
       { id: 2, houseId: 1, userId: 3, userName: "Marco", taskId: 4, taskName: "Pulire il bagno", kind: "updated", detail: "assegnazione chiunque → personalizzata (2 turni)", restorable: false, createdAt: iso(-D) },
@@ -95,7 +106,13 @@ createServer((req, res) => {
     req.on("end", () => {
       if (req.method !== "GET") console.log(`[anteprima] ${req.method} ${url} ${body}`);
       if (req.method === "PATCH" && url === "/api/houses/1") {
-        const parsed = JSON.parse(body || "{}") as { digests?: Record<string, Partial<(typeof digests)[string]>> };
+        const parsed = JSON.parse(body || "{}") as {
+          digests?: Record<string, Partial<(typeof digests)[string]>>;
+          insults?: Record<string, string[]>;
+        };
+        for (const [severity, messages] of Object.entries(parsed.insults ?? {})) {
+          insults[severity] = messages.map((m) => m.trim()).filter(Boolean);
+        }
         for (const [kind, update] of Object.entries(parsed.digests ?? {})) {
           if (digests[kind]) digests[kind] = { ...digests[kind], ...update, intro: update.intro?.trim() || null };
         }

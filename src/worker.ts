@@ -9,6 +9,7 @@ import { createD1Db } from "./services/db.js";
 import { HouseStore, sessionTtlSeconds } from "./services/store.js";
 import { runDueChecks } from "./services/scheduler.js";
 import { composeDigest, defaultDigestIntro, runDigests } from "./services/digest.js";
+import { defaultInsults, maxInsultLength, maxInsultsPerSeverity } from "./services/insults.js";
 import { getDueAt } from "./services/policy.js";
 import { verifyTelegramMiniAppInitData } from "./services/web-auth.js";
 import { renderAppPage } from "./web/page.js";
@@ -257,6 +258,12 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       if (typeof body.notifyChanges === "boolean") {
         await store.setHouseNotifyChanges(house.id, body.notifyChanges);
       }
+      if (body.insults !== undefined) {
+        // Ognuno modifica solo i propri insulti.
+        for (const [severity, messages] of parseInsultUpdates(body.insults)) {
+          await store.setMyInsults(house.id, user.id, severity, messages);
+        }
+      }
       if (body.digests !== undefined) {
         for (const [kind, update] of parseDigestUpdates(body.digests)) {
           await store.updateDigest(house.id, kind, update);
@@ -346,12 +353,14 @@ function timezoneOf(env: WorkerEnv): string {
 
 async function buildHousePayload(store: HouseStore, house: House, viewer: AppUser, timezone: string) {
   const now = new Date();
-  const [tasks, members, log, slots, digests] = await Promise.all([
+  const [tasks, members, log, slots, digests, myInsults, insultCounts] = await Promise.all([
     store.listTasks(house.id),
     store.listMembers(house.id),
     store.listLog(house.id, 50),
     store.listOpenSlots(house.id),
     store.getDigests(house.id),
+    store.listMyInsults(house.id, viewer.id),
+    store.countInsults(house.id),
   ]);
 
   const digestViews = await Promise.all(
@@ -379,6 +388,13 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
     members: members.map((member) => ({ id: member.userId, displayName: member.displayName, username: member.username })),
     log,
     digests: digestViews,
+    // Solo gli insulti scritti da chi guarda: quelli degli altri restano segreti (se ne mostra solo il numero).
+    insults: (["low", "medium", "high"] as const).map((severity) => ({
+      severity,
+      mine: myInsults[severity],
+      byOthers: insultCounts[severity] - myInsults[severity].length,
+      defaults: defaultInsults[severity],
+    })),
     timezone,
   };
 }
@@ -504,6 +520,29 @@ async function parseAssignment(store: HouseStore, houseId: number, raw: unknown)
     return { userId: slot.userId, kind, startsAt: startsAt.toISOString(), dueAt: dueAt.toISOString() };
   });
   return { mode, slots };
+}
+
+/** Valida { low?: string[], ... } con i propri insulti (lista vuota = cancellali). */
+function parseInsultUpdates(raw: unknown): Array<[TaskSeverity, string[]]> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new HttpError(400, "Insulti non validi.");
+  }
+
+  const updates: Array<[TaskSeverity, string[]]> = [];
+  for (const [severity, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!["low", "medium", "high"].includes(severity)) {
+      throw new HttpError(400, "Gravita' non valida.");
+    }
+    if (!Array.isArray(value)) {
+      throw new HttpError(400, "Insulti non validi.");
+    }
+    const messages = value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+    if (messages.length > maxInsultsPerSeverity || messages.some((message) => message.length > maxInsultLength)) {
+      throw new HttpError(400, `Massimo ${maxInsultsPerSeverity} messaggi da ${maxInsultLength} caratteri.`);
+    }
+    updates.push([severity as TaskSeverity, messages]);
+  }
+  return updates;
 }
 
 const maxDigestIntroLength = 200;
