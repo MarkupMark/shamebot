@@ -18,6 +18,11 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   e un periodo (un giorno specifico, entro una settimana, entro un mese). Il turno aperto con la scadenza piu' vicina
   decide a chi tocca e quando scade; finiti i turni l'attivita' torna a chiunque con la frequenza normale.
   Promemoria ed elenco nel gruppo mostrano a chi tocca. Si imposta dal portale.
+- **Fuori casa.** Dal portale un coinquilino dice "🧳 Sono fuori casa"; nel gruppo compare la richiesta con il pulsante
+  "✅ Confermo" e serve l'ok di un **altro** coinquilino (dal gruppo o dal portale). Da quel momento le attivita' che
+  toccano a lui sono in pausa: niente promemoria, avvisi o insulti. Al rientro (lo segna lui o chiunque dal portale) le
+  attivita' scadute mentre era via vanno fatte entro la fine di quel giorno, le altre slittano di tutto il tempo in cui
+  e' stato fuori. Le attivita' di "chiunque" non vanno in pausa.
 - **Insulti segreti.** Ogni coinquilino scrive dal portale (scheda Casa) i suoi insulti per attivita' poco importanti,
   medie e importanti: li vede solo lui. Quando un'attivita' scade, e al sollecito, il bot ne aggiunge uno a caso tra
   quelli scritti dagli **altri**, mai da chi lo riceve. Se nessuno ne ha scritti usa quelli predefiniti.

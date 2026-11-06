@@ -124,6 +124,31 @@ export type WebLoginRequest = {
   expiresAt: string;
 };
 
+export type AbsenceStatus = "pending" | "active" | "ended" | "cancelled";
+
+/** "Sono fuori casa": pending finche' un altro coinquilino non conferma, poi active fino al rientro. */
+export type Absence = {
+  id: number;
+  houseId: number;
+  userId: number;
+  userName: string;
+  status: AbsenceStatus;
+  startsAt: string;
+  approvedBy: number | null;
+  approvedByName: string | null;
+  endedAt: string | null;
+  messageId: number | null;
+};
+
+/** Scadenza spostata al rientro: `overdue` = era scaduta durante l'assenza e va fatta il giorno del rientro. */
+export type MovedTask = {
+  task: Task;
+  dueAt: Date;
+  overdue: boolean;
+  /** Tempo regalato (solo per quelle non scadute). */
+  shiftMs: number;
+};
+
 export type NoticeStageKey = "three_hours" | "thirty_minutes" | "overdue" | "nudge";
 
 export type NoticeStage = {

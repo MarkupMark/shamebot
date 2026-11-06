@@ -184,3 +184,25 @@ describe("Insulti dal portale", () => {
     expect((await call(lucaSession, "PATCH", `/api/houses/${house.id}`, { insults: { altissima: ["x"] } })).status).toBe(400);
   });
 });
+
+describe("Fuori casa dal portale", () => {
+  it("richiesta, conferma di un altro, attivita' in pausa e rientro", async () => {
+    const { store, lucaSession, annaSession, house, luca, anna, call } = await setup();
+    await store.addMember(house.id, anna.id);
+    await store.createTask(house.id, luca.id, "Bagno", 7 * 24 * 3600 * 1000, "high", new Date(), null, { mode: "single", userIds: [luca.id] });
+
+    const requested = await call(lucaSession, "POST", `/api/houses/${house.id}/absences`);
+    expect(requested.status).toBe(201);
+    const absence = requested.json.absences[0];
+    expect(absence).toMatchObject({ userId: luca.id, status: "pending" });
+
+    expect((await call(lucaSession, "POST", `/api/houses/${house.id}/absences/${absence.id}/approve`)).status).toBe(409);
+    const approved = await call(annaSession, "POST", `/api/houses/${house.id}/absences/${absence.id}/approve`);
+    expect(approved.json.absences[0].status).toBe("active");
+    expect(approved.json.tasks[0].paused).toBe(true);
+
+    const ended = await call(annaSession, "POST", `/api/houses/${house.id}/absences/${absence.id}/end`);
+    expect(ended.json.absences).toEqual([]);
+    expect(ended.json.tasks[0].paused).toBe(false);
+  });
+});

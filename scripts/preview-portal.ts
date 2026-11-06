@@ -19,6 +19,12 @@ const digests: Record<string, { enabled: boolean; time: string; intro: string | 
 };
 // I "tuoi" insulti; quelli degli altri coinquilini sono simulati solo come numero (sono segreti).
 const insults: Record<string, string[]> = { low: [], medium: ["{nome}, {attivita} ti aspetta da ore"], high: [] };
+// Fuori casa: Marco e' via da 2 giorni (confermato), Anna ha appena chiesto.
+type PreviewAbsence = { id: number; userId: number; userName: string; status: string; startsAt: string; approvedByName: string | null };
+let absences: PreviewAbsence[] = [
+  { id: 1, userId: 3, userName: "Marco", status: "active", startsAt: new Date(Date.now() - 2 * 86_400_000).toISOString(), approvedByName: "Tu" },
+  { id: 2, userId: 2, userName: "Anna", status: "pending", startsAt: new Date(Date.now() - 20 * 60_000).toISOString(), approvedByName: null },
+];
 const insultsByOthers: Record<string, number> = { low: 0, medium: 2, high: 5 };
 
 const digestText = {
@@ -53,6 +59,7 @@ function buildData() {
       previewEmpty: false,
     })),
     timezone: "Europe/Rome",
+    absences,
     insults: (["low", "medium", "high"] as const).map((severity) => ({
       severity,
       mine: insults[severity],
@@ -63,7 +70,7 @@ function buildData() {
       { id: 1, houseId: 1, userId: 2, userName: "Anna", taskId: 2, taskName: "Lavatrice", kind: "done", detail: null, restorable: false, createdAt: iso(-3 * H) },
       { id: 2, houseId: 1, userId: 3, userName: "Marco", taskId: 4, taskName: "Pulire il bagno", kind: "updated", detail: "assegnazione chiunque → personalizzata (2 turni)", restorable: false, createdAt: iso(-D) },
     ],
-    tasks: [
+    tasks: ([
       task(1, "Buttare l'umido", -5 * H, { assignMode: "alternate", assignUserIds: [1, 2], assigneeId: 1, assigneeName: "Tu", severity: "high" }),
       task(2, "Lavatrice", 9 * H, { assignMode: "single", assignUserIds: [2], assigneeId: 2, assigneeName: "Anna" }),
       task(3, "Pavimenti", 2.2 * D),
@@ -77,7 +84,10 @@ function buildData() {
       task(5, "Superfici cucina", 6.6 * D),
       task(6, "Vetri", 19 * D, { assignMode: "single", assignUserIds: [1], assigneeId: 1, assigneeName: "Tu" }),
       task(7, "Frigo", 52 * D),
-    ],
+    ] as Array<ReturnType<typeof task>>).map((t) => ({
+      ...t,
+      paused: t.assigneeId !== null && absences.some((a) => a.status === "active" && a.userId === t.assigneeId),
+    })),
   };
 }
 
@@ -99,6 +109,19 @@ createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   if (url === "/api/me") {
     return res.end(JSON.stringify({ user: { id: 1, displayName: "Tu", username: "tu" }, houses: [{ id: 1, name: "Casa di prova" }] }));
+  }
+  const absenceAction = url.match(/^\/api\/houses\/1\/absences(?:\/(\d+)\/(approve|cancel|end))?$/);
+  if (absenceAction && req.method === "POST") {
+    const [, id, action] = absenceAction;
+    if (!id && !absences.some((a) => a.userId === 1)) {
+      absences.push({ id: Date.now(), userId: 1, userName: "Tu", status: "pending", startsAt: new Date().toISOString(), approvedByName: null });
+    } else if (action === "approve") {
+      absences = absences.map((a) => (a.id === Number(id) ? { ...a, status: "active", approvedByName: "Tu" } : a));
+    } else if (action) {
+      absences = absences.filter((a) => a.id !== Number(id));
+    }
+    console.log(`[anteprima] POST ${url}`);
+    return res.end(JSON.stringify(buildData()));
   }
   if (url.startsWith("/api/houses/1") || url === "/logout") {
     let body = "";

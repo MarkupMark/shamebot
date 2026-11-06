@@ -1,4 +1,7 @@
 import type {
+  Absence,
+  AbsenceStatus,
+  MovedTask,
   AppUser,
   DigestKind,
   DigestSettings,
@@ -17,6 +20,8 @@ import type {
 } from "../types/domain.js";
 import type { Db, SqlParam, SqlRow } from "./db.js";
 import { describeTaskChanges } from "../utils/tasks.js";
+import { getDueAt } from "./policy.js";
+import { endOfLocalDay } from "./digest.js";
 
 export type TelegramIdentity = {
   telegramId: number;
@@ -193,6 +198,121 @@ export class HouseStore {
   async listHouses(): Promise<House[]> {
     const rows = await this.db.all("SELECT * FROM houses ORDER BY id");
     return rows.map(mapHouse);
+  }
+
+  // ---- Fuori casa ----
+
+  /** Assenze in attesa di conferma o in corso. */
+  async listOpenAbsences(houseId: number): Promise<Absence[]> {
+    const rows = await this.db.all(`${absenceSelect} WHERE a.house_id = ? AND a.status IN ('pending', 'active') ORDER BY a.starts_at`, [houseId]);
+    return rows.map(mapAbsence);
+  }
+
+  async getAbsence(houseId: number, absenceId: number): Promise<Absence | null> {
+    const row = await this.db.first(`${absenceSelect} WHERE a.house_id = ? AND a.id = ?`, [houseId, absenceId]);
+    return row ? mapAbsence(row) : null;
+  }
+
+  /** Coinquilini fuori casa (assenza confermata) per ogni casa: le loro attivita' sono in pausa. */
+  async listAwayUsers(): Promise<Set<string>> {
+    const rows = await this.db.all("SELECT house_id, user_id FROM absences WHERE status = 'active'");
+    return new Set(rows.map((row) => awayKey(Number(row.house_id), Number(row.user_id))));
+  }
+
+  async awayUserIds(houseId: number): Promise<Set<number>> {
+    const rows = await this.db.all("SELECT user_id FROM absences WHERE house_id = ? AND status = 'active'", [houseId]);
+    return new Set(rows.map((row) => Number(row.user_id)));
+  }
+
+  /** "Sono fuori casa": se ce n'e' gia' una aperta per lo stesso utente restituisce quella. */
+  async requestAbsence(houseId: number, userId: number, now: Date = new Date()): Promise<{ absence: Absence; created: boolean }> {
+    const open = (await this.listOpenAbsences(houseId)).find((absence) => absence.userId === userId);
+    if (open) {
+      return { absence: open, created: false };
+    }
+    const result = await this.db.run(
+      "INSERT INTO absences (house_id, user_id, status, starts_at) VALUES (?, ?, 'pending', ?)",
+      [houseId, userId, now.toISOString()],
+    );
+    return { absence: (await this.getAbsence(houseId, result.lastRowId)) as Absence, created: true };
+  }
+
+  async setAbsenceMessage(absenceId: number, messageId: number): Promise<void> {
+    await this.db.run("UPDATE absences SET message_id = ? WHERE id = ?", [messageId, absenceId]);
+  }
+
+  async approveAbsence(houseId: number, absenceId: number, approverId: number, now: Date = new Date()): Promise<Absence | null> {
+    const result = await this.db.run(
+      "UPDATE absences SET status = 'active', approved_by = ?, approved_at = ? WHERE house_id = ? AND id = ? AND status = 'pending' AND user_id <> ?",
+      [approverId, now.toISOString(), houseId, absenceId, approverId],
+    );
+    return result.changes > 0 ? await this.getAbsence(houseId, absenceId) : null;
+  }
+
+  async cancelAbsence(houseId: number, absenceId: number, now: Date = new Date()): Promise<boolean> {
+    const result = await this.db.run(
+      "UPDATE absences SET status = 'cancelled', ended_at = ? WHERE house_id = ? AND id = ? AND status = 'pending'",
+      [now.toISOString(), houseId, absenceId],
+    );
+    return result.changes > 0;
+  }
+
+  /**
+   * Rientro: chiude l'assenza e sposta le scadenze delle attivita' assegnate a chi rientra.
+   * - scadute durante l'assenza -> vanno fatte entro la fine del giorno del rientro;
+   * - non ancora scadute -> slittano di quanto e' durata l'assenza (giorni "regalati");
+   * - gia' in ritardo prima di partire -> restano come sono.
+   */
+  async endAbsence(
+    houseId: number,
+    absenceId: number,
+    endedBy: number,
+    now: Date,
+    timezone: string,
+  ): Promise<{ absence: Absence; moved: MovedTask[] } | null> {
+    const absence = await this.getAbsence(houseId, absenceId);
+    if (!absence || absence.status !== "active") {
+      return null;
+    }
+    await this.db.run("UPDATE absences SET status = 'ended', ended_by = ?, ended_at = ? WHERE id = ?", [endedBy, now.toISOString(), absenceId]);
+
+    const start = new Date(absence.startsAt);
+    const awayMs = Math.max(0, now.getTime() - start.getTime());
+    const endOfToday = endOfLocalDay(now, timezone);
+    const moved: MovedTask[] = [];
+
+    for (const task of await this.listTasks(houseId)) {
+      if (task.assigneeId !== absence.userId) {
+        continue;
+      }
+      const due = getDueAt(task);
+      if (due < start) {
+        continue;
+      }
+      const overdue = due < now;
+      const newDue = overdue ? endOfToday : new Date(due.getTime() + awayMs);
+
+      if (task.slotDueAt) {
+        await this.db.run(
+          `UPDATE task_slots SET due_at = ?
+           WHERE id = (SELECT id FROM task_slots WHERE task_id = ? AND completed_at IS NULL ORDER BY due_at, id LIMIT 1)`,
+          [newDue.toISOString(), task.id],
+        );
+      } else {
+        await this.db.run("UPDATE tasks SET cycle_anchor_at = ? WHERE id = ?", [
+          new Date(newDue.getTime() - task.intervalMs).toISOString(),
+          task.id,
+        ]);
+      }
+      await this.db.run(
+        `UPDATE tasks SET reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL,
+           overdue_notice_sent_at = NULL, nudge_sent_at = NULL, updated_at = ? WHERE id = ?`,
+        [now.toISOString(), task.id],
+      );
+      moved.push({ task: (await this.getTask(houseId, task.id)) as Task, dueAt: newDue, overdue, shiftMs: overdue ? 0 : awayMs });
+    }
+
+    return { absence: (await this.getAbsence(houseId, absenceId)) as Absence, moved };
   }
 
   // ---- Insulti ----
@@ -713,6 +833,32 @@ export class HouseStore {
 }
 
 export const sessionTtlSeconds = sessionTtlMs / 1000;
+
+export function awayKey(houseId: number, userId: number): string {
+  return `${houseId}:${userId}`;
+}
+
+const absenceSelect = `
+  SELECT a.*, u.display_name AS user_name, ap.display_name AS approved_by_name
+  FROM absences a
+  JOIN users u ON u.id = a.user_id
+  LEFT JOIN users ap ON ap.id = a.approved_by
+`;
+
+function mapAbsence(row: SqlRow): Absence {
+  return {
+    id: Number(row.id),
+    houseId: Number(row.house_id),
+    userId: Number(row.user_id),
+    userName: String(row.user_name),
+    status: String(row.status) as AbsenceStatus,
+    startsAt: String(row.starts_at),
+    approvedBy: row.approved_by === null || row.approved_by === undefined ? null : Number(row.approved_by),
+    approvedByName: nullableString(row.approved_by_name),
+    endedAt: nullableString(row.ended_at),
+    messageId: row.message_id === null || row.message_id === undefined ? null : Number(row.message_id),
+  };
+}
 
 function mapUser(row: SqlRow): AppUser {
   return {

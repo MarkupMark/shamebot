@@ -13,6 +13,7 @@ import { defaultInsults, maxInsultLength, maxInsultsPerSeverity } from "./servic
 import { getDueAt } from "./services/policy.js";
 import { verifyTelegramMiniAppInitData } from "./services/web-auth.js";
 import { renderAppPage } from "./web/page.js";
+import { AbsenceError } from "./services/houses.js";
 import { renderContributePage } from "./web/contribute.js";
 import { formatFrequency, parseDurationInput } from "./utils/duration.js";
 import { severityFromItalian } from "./utils/labels.js";
@@ -293,6 +294,34 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
     return jsonResponse({ ok: true, task: mapTaskView(task), notified }, { status: 201 });
   }
 
+  if (rest === "absences" && method === "POST") {
+    await service.requestAbsence(house, user);
+    return jsonResponse(await buildHousePayload(store, house, user, timezoneOf(env)), { status: 201 });
+  }
+
+  const absenceMatch = rest.match(/^absences\/(\d+)\/(approve|cancel|end)$/);
+  if (absenceMatch) {
+    if (method !== "POST") {
+      return methodNotAllowed(["POST"]);
+    }
+    const absenceId = Number(absenceMatch[1]);
+    try {
+      if (absenceMatch[2] === "approve") {
+        await service.approveAbsence(house, user, absenceId);
+      } else if (absenceMatch[2] === "cancel") {
+        await service.cancelAbsence(house, user, absenceId);
+      } else {
+        await service.endAbsence(house, user, absenceId, timezoneOf(env));
+      }
+    } catch (error) {
+      if (error instanceof AbsenceError) {
+        throw new HttpError(409, error.message);
+      }
+      throw error;
+    }
+    return jsonResponse(await buildHousePayload(store, house, user, timezoneOf(env)));
+  }
+
   const restoreMatch = rest.match(/^log\/(\d+)\/restore$/);
   if (restoreMatch) {
     if (method !== "POST") {
@@ -353,7 +382,7 @@ function timezoneOf(env: WorkerEnv): string {
 
 async function buildHousePayload(store: HouseStore, house: House, viewer: AppUser, timezone: string) {
   const now = new Date();
-  const [tasks, members, log, slots, digests, myInsults, insultCounts] = await Promise.all([
+  const [tasks, members, log, slots, digests, myInsults, insultCounts, absences] = await Promise.all([
     store.listTasks(house.id),
     store.listMembers(house.id),
     store.listLog(house.id, 50),
@@ -361,7 +390,9 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
     store.getDigests(house.id),
     store.listMyInsults(house.id, viewer.id),
     store.countInsults(house.id),
+    store.listOpenAbsences(house.id),
   ]);
+  const away = new Set(absences.filter((absence) => absence.status === "active").map((absence) => absence.userId));
 
   const digestViews = await Promise.all(
     digestKindValues.map(async (kind) => {
@@ -384,7 +415,19 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
     house: { id: house.id, name: house.name, notifyChanges: house.notifyChanges },
     viewerId: viewer.id,
     now: new Date().toISOString(),
-    tasks: sortTasksByDueDate(tasks).map((task) => mapTaskView(task, slots.filter((slot) => slot.taskId === task.id))),
+    tasks: sortTasksByDueDate(tasks).map((task) => ({
+      ...mapTaskView(task, slots.filter((slot) => slot.taskId === task.id)),
+      // In pausa: tocca a chi e' fuori casa (niente avvisi; al rientro la scadenza si sposta).
+      paused: task.assigneeId !== null && away.has(task.assigneeId),
+    })),
+    absences: absences.map((absence) => ({
+      id: absence.id,
+      userId: absence.userId,
+      userName: absence.userName,
+      status: absence.status,
+      startsAt: absence.startsAt,
+      approvedByName: absence.approvedByName,
+    })),
     members: members.map((member) => ({ id: member.userId, displayName: member.displayName, username: member.username })),
     log,
     digests: digestViews,

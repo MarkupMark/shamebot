@@ -1,15 +1,24 @@
-import type { NoticeStageKey, Task } from "../types/domain.js";
+import type { MovedTask, NoticeStageKey, Task } from "../types/domain.js";
 import { formatFrequencyShort, formatShortDuration } from "../utils/duration.js";
 import { severityToItalian } from "../utils/labels.js";
 import { getDueAt } from "./policy.js";
 
-/** Invia un messaggio di testo a una chat Telegram. Implementato da bot.api, sostituibile nei test. */
-export type SendToChat = (chatId: number, text: string) => Promise<unknown>;
+/** Pulsanti sotto un messaggio: righe di [testo, dato del callback]. */
+export type MessageButtons = Array<Array<{ text: string; data: string }>>;
 
-export async function safeSend(send: SendToChat, chatId: number, text: string): Promise<boolean> {
+/** Invia un messaggio di testo a una chat Telegram. Implementato da bot.api, sostituibile nei test. */
+export type SendToChat = (chatId: number, text: string, buttons?: MessageButtons) => Promise<unknown>;
+
+export async function safeSend(send: SendToChat, chatId: number, text: string, buttons?: MessageButtons): Promise<boolean> {
+  return (await sendAndGetId(send, chatId, text, buttons)) !== false;
+}
+
+/** Come safeSend ma restituisce l'id del messaggio inviato (null se sconosciuto), false se l'invio fallisce. */
+export async function sendAndGetId(send: SendToChat, chatId: number, text: string, buttons?: MessageButtons): Promise<number | null | false> {
   try {
-    await send(chatId, text);
-    return true;
+    const result = await send(chatId, text, buttons);
+    const id = (result as { message_id?: unknown } | undefined)?.message_id;
+    return typeof id === "number" ? id : null;
   } catch (error) {
     console.error(`Invio Telegram fallito verso ${chatId}:`, error);
     return false;
@@ -20,16 +29,19 @@ export async function safeSend(send: SendToChat, chatId: number, text: string): 
 export const compactTaskCount = 5;
 
 /** Riga compatta per /attivita: solo nome ed entro quando va fatta. */
-export function formatTaskBullet(task: Task, now: Date): string {
+export function formatTaskBullet(task: Task, now: Date, away: Set<number> = new Set()): string {
+  if (task.assigneeId !== null && away.has(task.assigneeId)) {
+    return `• ${task.name} · ⏸ in pausa, ${task.assigneeName} è fuori casa`;
+  }
   const leftMs = getDueAt(task).getTime() - now.getTime();
   const state = leftMs < 0 ? `⚠️ in ritardo di ${formatShortDuration(leftMs)}` : `entro ${formatShortDuration(leftMs)}`;
   return `• ${task.name} · ${state}`;
 }
 
 /** Elenco puntato delle attivita' (gia' ordinate per scadenza); `limit` taglia alle prime N. */
-export function formatTaskList(tasks: Task[], now: Date, limit?: number): string {
+export function formatTaskList(tasks: Task[], now: Date, limit?: number, away: Set<number> = new Set()): string {
   const shown = limit === undefined ? tasks : tasks.slice(0, limit);
-  return shown.map((task) => formatTaskBullet(task, now)).join("\n");
+  return shown.map((task) => formatTaskBullet(task, now, away)).join("\n");
 }
 
 export function taskCreatedMessage(actorName: string, task: Task): string {
@@ -53,6 +65,26 @@ export function taskCompletedMessage(actorName: string, task: Task): string {
   const next = Math.max(0, getDueAt(task).getTime() - Date.now());
   const who = task.assigneeName ? ` · tocca a ${task.assigneeName}` : "";
   return `✅ ${actorName}: ${task.name} · prossima tra ${formatShortDuration(next || task.intervalMs)}${who}`;
+}
+
+export function awayRequestedMessage(name: string): string {
+  return `🧳 ${name} è fuori casa\nServe l'ok di un coinquilino: poi le sue attività vanno in pausa.`;
+}
+
+export function awayApprovedMessage(name: string, approver: string): string {
+  return `🧳 ${name} è fuori casa · ok di ${approver}\nLe sue attività sono in pausa fino al rientro.`;
+}
+
+export function awayEndedMessage(name: string, endedBy: string | null, moved: MovedTask[], now: Date): string {
+  const lines = [`🏠 ${name} è rientrato${endedBy && endedBy !== name ? ` (segnato da ${endedBy})` : ""}`];
+  for (const item of moved) {
+    lines.push(
+      item.overdue
+        ? `• ${item.task.name} · da fare oggi`
+        : `• ${item.task.name} · tra ${formatShortDuration(item.dueAt.getTime() - now.getTime())} (+${formatShortDuration(item.shiftMs)} regalati)`,
+    );
+  }
+  return lines.join("\n");
 }
 
 export function noticeMessage(task: Task, stage: NoticeStageKey, now: Date): string {

@@ -109,6 +109,13 @@ const PAGE_TEMPLATE = `<!doctype html>
   .tl-bar.soon { background: var(--warn); }
   .tl-bar.urgent { background: var(--late); }
   .tl-bar.far { background: linear-gradient(90deg, color-mix(in srgb, var(--ok) 70%, transparent) 70%, transparent); border-radius: 0; }
+  .tl-bar.paused { width: 100%; border-radius: 7px; background: repeating-linear-gradient(135deg, var(--line) 0 6px, transparent 6px 12px); border: 1px dashed var(--muted); opacity: .8; }
+  .tl-paused-label { position: absolute; left: 8px; top: 3px; font-size: .72rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .away { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); margin: 8px 0; font-size: .9rem; }
+  .away .grow small { display: block; color: var(--muted); font-size: .78rem; }
+  .away.pending { border-color: var(--warn); }
+  .away button { padding: 6px 12px; font-size: .85rem; white-space: nowrap; }
+  .due-paused { color: var(--muted); font-weight: 600; }
   .tl-bar.late { background: repeating-linear-gradient(135deg, var(--late) 0 6px, color-mix(in srgb, var(--late) 70%, transparent) 6px 12px); width: 100%; border-radius: 7px; opacity: .9; }
   .tl-when { position: absolute; top: 3px; font-size: .72rem; font-weight: 600; white-space: nowrap; padding-left: 6px; }
   .tl-when.inside { color: #fff; padding: 0 8px 0 0; transform: translateX(-100%); }
@@ -334,7 +341,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       } }, r[1]));
     });
 
-    var lateCount = tasks.filter(function (t) { return new Date(t.dueAt).getTime() < now; }).length;
+    var lateCount = tasks.filter(function (t) { return !t.paused && new Date(t.dueAt).getTime() < now; }).length;
     var mineCount = visible.filter(function (t) { return t.assigneeId === state.data.viewerId; }).length;
     var subtitle = lateCount ? lateCount + " in ritardo" : "Niente in ritardo";
     if (mineCount) subtitle += " · " + mineCount + " tocca" + (mineCount === 1 ? "" : "no") + " a te";
@@ -365,7 +372,10 @@ const PAGE_TEMPLATE = `<!doctype html>
       var left = due - now;
       var mine = task.assigneeId === state.data.viewerId;
       var track = h("div", { class: "tl-track", title: task.name + " - scade " + when(task.dueAt) });
-      if (left < 0) {
+      if (task.paused) {
+        track.appendChild(h("div", { class: "tl-bar paused" }));
+        track.appendChild(h("span", { class: "tl-paused-label" }, "⏸ in pausa · fuori casa"));
+      } else if (left < 0) {
         track.appendChild(h("div", { class: "tl-bar late" }));
         track.appendChild(h("span", { class: "tl-late-label" }, "in ritardo di " + shortLeft(left)));
       } else {
@@ -548,7 +558,7 @@ const PAGE_TEMPLATE = `<!doctype html>
 
   function taskCard(task) {
     if (state.editing === task.id) return taskForm(task);
-    var due = dueInfo(task);
+    var due = task.paused ? { cls: "due-paused", text: "⏸ In pausa: " + task.assigneeName + " e' fuori casa" } : dueInfo(task);
     function done() { api("POST", "/api/houses/" + state.houseId + "/tasks/" + task.id + "/complete").then(loadHouse).catch(fail); }
     function remove() {
       if (!confirm("Eliminare \\"" + task.name + "\\"?")) return;
@@ -607,6 +617,53 @@ const PAGE_TEMPLATE = `<!doctype html>
       ));
     });
     return h("div", { class: "card" }, list);
+  }
+
+  // ---------- Fuori casa ----------
+  function sinceLabel(iso) {
+    var ms = Date.now() - new Date(iso).getTime();
+    if (ms < HOUR) return "da poco";
+    return "da " + shortLeft(ms);
+  }
+  function absenceAction(path, confirmText) {
+    if (confirmText && !confirm(confirmText)) return;
+    api("POST", "/api/houses/" + state.houseId + path).then(function (data) { state.data = data; state.error = ""; render(); }).catch(fail);
+  }
+
+  /** Banner sopra la timeline: chi e' fuori casa e le richieste da confermare. */
+  function viewAbsences() {
+    var list = state.data.absences || [];
+    if (!list.length) return null;
+    var me = state.data.viewerId;
+    return h("div", {}, list.map(function (a) {
+      var mine = a.userId === me;
+      var base = "/absences/" + a.id;
+      if (a.status === "pending") {
+        return h("div", { class: "away pending" },
+          h("div", { class: "grow" }, mine ? "🧳 Hai detto che sei fuori casa" : "🧳 " + a.userName + " dice di essere fuori casa",
+            h("small", {}, mine ? "Serve l'ok di un coinquilino, poi le tue attivita' vanno in pausa." : "Se e' vero conferma: le sue attivita' andranno in pausa.")),
+          mine ? h("button", { class: "ghost", onclick: function () { absenceAction(base + "/cancel"); } }, "Annulla")
+               : h("button", { class: "primary", onclick: function () { absenceAction(base + "/approve"); } }, "✅ Confermo")
+        );
+      }
+      return h("div", { class: "away" },
+        h("div", { class: "grow" }, mine ? "🧳 Sei fuori casa " + sinceLabel(a.startsAt) : "🧳 " + a.userName + " e' fuori casa " + sinceLabel(a.startsAt),
+          h("small", {}, (mine ? "Le tue attivita' sono in pausa" : "Le sue attivita' sono in pausa") + (a.approvedByName ? " · ok di " + a.approvedByName : ""))),
+        h("button", { class: mine ? "primary" : "", onclick: function () {
+          absenceAction(base + "/end", mine ? null : "Segnare il rientro di " + a.userName + "?");
+        } }, mine ? "🏠 Sono rientrato" : "🏠 Segna rientro")
+      );
+    }));
+  }
+
+  function awayCard() {
+    var open = (state.data.absences || []).filter(function (a) { return a.userId === state.data.viewerId; })[0];
+    return h("div", { class: "card" },
+      h("p", { style: "margin:0 0 6px" }, "Vai via qualche giorno? Dillo qui: quando un coinquilino conferma, le attivita' che toccano a te vanno in pausa (niente avvisi ne' insulti)."),
+      h("p", { class: "muted", style: "margin:0 0 10px" }, "Al rientro, quelle scadute mentre eri via vanno fatte entro la fine di quel giorno; le altre slittano di tutti i giorni in cui sei stato fuori. Il rientro lo segni tu o un coinquilino."),
+      open ? h("p", { class: "muted", style: "margin:0" }, open.status === "pending" ? "Richiesta inviata: aspetta l'ok di un coinquilino (lo vedi in alto)." : "Sei fuori casa: quando torni premi «Sono rientrato» in alto.")
+           : h("button", { class: "primary", onclick: function () { absenceAction("/absences", "Avvisare il gruppo che sei fuori casa?"); } }, "🧳 Sono fuori casa")
+    );
   }
 
   // ---------- Promemoria giornalieri ----------
@@ -780,6 +837,8 @@ const PAGE_TEMPLATE = `<!doctype html>
     return h("div", {},
       h("h2", {}, "Coinquilini"),
       h("div", { class: "card" }, members),
+      h("h2", {}, "Fuori casa"),
+      awayCard(),
       h("h2", {}, "Promemoria nel gruppo"),
       state.data.digests.map(digestCard),
       h("h2", {}, "I tuoi insulti segreti"),
@@ -828,7 +887,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     });
 
     var view = state.tab === "tasks" ? viewTasks() : state.tab === "log" ? viewLog() : viewHouse();
-    var parts = [header, viewTimeline(), tabs, state.error ? h("p", { class: "error" }, state.error) : null, view].filter(Boolean);
+    var parts = [header, viewAbsences(), viewTimeline(), tabs, state.error ? h("p", { class: "error" }, state.error) : null, view].filter(Boolean);
     root.replaceChildren.apply(root, parts);
   }
 

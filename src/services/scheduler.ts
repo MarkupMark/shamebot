@@ -1,4 +1,4 @@
-import type { HouseStore } from "./store.js";
+import { awayKey, type HouseStore } from "./store.js";
 import { getDueNotice } from "./policy.js";
 import { noticeMessage, safeSend, type SendToChat } from "./notify.js";
 import { runDigests } from "./digest.js";
@@ -16,9 +16,15 @@ export async function runDueChecks(
   pick: Chooser = randomPick,
 ): Promise<number> {
   const tasks = await store.listTasksWithHouses();
+  const away = await store.listAwayUsers();
   let sent = 0;
 
   for (const task of tasks) {
+    // Chi e' fuori casa (assenza confermata) non riceve avvisi ne' insulti: le sue attivita' sono in pausa.
+    if (task.assigneeId !== null && away.has(awayKey(task.house.id, task.assigneeId))) {
+      continue;
+    }
+
     const due = getDueNotice(task, now);
     if (!due) {
       continue;

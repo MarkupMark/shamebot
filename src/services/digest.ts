@@ -49,6 +49,12 @@ export function localMidnight(at: Date, timezone: string): Date {
   return new Date(Math.floor((guess.getTime() + fix) / 60_000) * 60_000);
 }
 
+/** Fine della giornata locale di `at` (mezzanotte successiva). */
+export function endOfLocalDay(at: Date, timezone: string): Date {
+  const midnight = localMidnight(at, timezone);
+  return localMidnight(new Date(midnight.getTime() + dayMs + 2 * 60 * 60 * 1000), timezone);
+}
+
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(":").map(Number);
   return (hours ?? 0) * 60 + (minutes ?? 0);
@@ -143,7 +149,9 @@ export async function composeDigest(
   now: Date,
   timezone: string,
 ): Promise<DigestMessage> {
-  return buildDigest(kind, settings, await store.listTasks(house.id), now, timezone);
+  // Le attivita' di chi e' fuori casa sono in pausa: non compaiono nei promemoria.
+  const [tasks, away] = await Promise.all([store.listTasks(house.id), store.awayUserIds(house.id)]);
+  return buildDigest(kind, settings, tasks.filter((task) => task.assigneeId === null || !away.has(task.assigneeId)), now, timezone);
 }
 
 // ---- Invio pianificato ----

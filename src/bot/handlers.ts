@@ -2,7 +2,7 @@ import { Bot, InlineKeyboard } from "grammy";
 import type { Context } from "grammy";
 import type { AppUser, House, LogEntry } from "../types/domain.js";
 import type { HouseStore } from "../services/store.js";
-import { HouseService } from "../services/houses.js";
+import { AbsenceError, HouseService, type EditInChat } from "../services/houses.js";
 import { compactTaskCount, formatTaskList, safeSend, type SendToChat } from "../services/notify.js";
 import { formatFrequencyShort, parseDurationInput } from "../utils/duration.js";
 import { severityFromItalian, severityToItalian } from "../utils/labels.js";
@@ -78,8 +78,12 @@ function quickActions(): InlineKeyboard {
 
 export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages = true }: BotAppDependencies): BotApp {
   const bot = new Bot(botToken);
-  const send: SendToChat = sendMessages ? (chatId, text) => bot.api.sendMessage(chatId, text) : async () => undefined;
-  const service = new HouseService(store, send);
+  const send: SendToChat = sendMessages
+    ? (chatId, text, buttons) =>
+        bot.api.sendMessage(chatId, text, buttons ? { reply_markup: InlineKeyboard.from(buttons.map((row) => row.map((b) => InlineKeyboard.text(b.text, b.data)))) } : undefined)
+    : async () => undefined;
+  const edit: EditInChat = sendMessages ? (chatId, messageId, text) => bot.api.editMessageText(chatId, messageId, text) : async () => undefined;
+  const service = new HouseService(store, send, edit);
 
   type Resolved = { house: House; user: AppUser };
 
@@ -131,7 +135,8 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
 
     const now = new Date();
     const hidden = tasks.length - compactTaskCount;
-    await ctx.reply(formatTaskList(tasks, now, compactTaskCount), {
+    const away = await store.awayUserIds(house.id);
+    await ctx.reply(formatTaskList(tasks, now, compactTaskCount, away), {
       ...(hidden > 0 ? { reply_markup: new InlineKeyboard().text(`Mostra altre ${hidden}`, "tasks:all") } : {}),
     });
   }
@@ -321,8 +326,24 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
         : all
           ? new InlineKeyboard().text("Mostra meno", "tasks:short")
           : new InlineKeyboard().text(`Mostra altre ${hidden}`, "tasks:all");
-    const text = tasks.length ? formatTaskList(tasks, new Date(), all ? undefined : compactTaskCount) : "Nessuna attività.";
+    const away = await store.awayUserIds(resolved.house.id);
+    const text = tasks.length ? formatTaskList(tasks, new Date(), all ? undefined : compactTaskCount, away) : "Nessuna attività.";
     await ctx.editMessageText(text, keyboard ? { reply_markup: keyboard } : {}).catch(() => undefined);
+  });
+
+  /** "✅ Confermo" sotto la richiesta "sono fuori casa". */
+  bot.callbackQuery(/^away:(\d+)$/, async (ctx) => {
+    const resolved = await resolveHouse(ctx);
+    if (!resolved) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    try {
+      await service.approveAbsence(resolved.house, resolved.user, Number(ctx.match[1]));
+      await ctx.answerCallbackQuery({ text: "✓ Confermato" });
+    } catch (error) {
+      await ctx.answerCallbackQuery({ text: error instanceof AbsenceError ? error.message : "Errore", show_alert: error instanceof AbsenceError });
+    }
   });
 
   bot.callbackQuery(/^cmd:(tasks|done|log)$/, async (ctx) => {

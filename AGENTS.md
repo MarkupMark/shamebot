@@ -54,4 +54,8 @@ arrivano solo tramite Pull Request da un fork.
 - **Assegnazione**: `anyone`, `single`, `alternate` (a turno, avanza a ogni "Fatto") oppure `custom`
   (turni in `task_slots`; il turno aperto più vicino decide a chi tocca e la scadenza).
 - **Registro** (`house_log`): tutto ciò che succede in una casa.
+- **Fuori casa** (`absences`): `pending` finché un altro membro non conferma, poi `active`. Le attività assegnate
+  a chi è fuori non generano avvisi; al rientro `HouseStore.endAbsence` sposta le scadenze.
+- **Insulti** (`insults`): scritti da ogni membro, segreti (l'API restituisce solo i propri), scelti a caso tra quelli
+  degli altri quando un'attività scade.
 - `BOT_PAUSED=true` spegne gli invii senza perdere dati.
