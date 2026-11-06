@@ -93,6 +93,12 @@ npm test
 npm run build
 ```
 
+## Contribuire
+
+Le modifiche arrivano tramite fork + Pull Request: vedi [CONTRIBUTING.md](CONTRIBUTING.md) (o la pagina `/contribuisci`
+del portale). Regole e struttura per gli assistenti AI sono in [AGENTS.md](AGENTS.md). Anteprima del portale con dati
+finti: `npm run preview`.
+
 ## Licenza
 
 [MIT](LICENSE)

@@ -61,6 +61,8 @@ const PAGE_TEMPLATE = `<!doctype html>
   .who.me { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 
   /* ---- Timeline scadenze ---- */
+  .contrib { display: block; margin-top: 28px; padding: 12px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; text-decoration: none; text-align: center; }
+  .contrib strong { color: var(--accent); font-weight: 600; }
   .tl { padding: 14px 14px 10px; }
   .tl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   .tl-title { font-weight: 700; font-size: 1rem; }
@@ -603,7 +605,8 @@ const PAGE_TEMPLATE = `<!doctype html>
       ),
       h("div", { class: "row", style: "margin-top:16px" },
         h("button", { onclick: function () { api("POST", "/logout").then(function () { state.me = null; renderLogin(); }); } }, "Esci")
-      )
+      ),
+      h("a", { class: "contrib", href: "/contribuisci" }, "🛠 Hai un'idea per il bot? ", h("strong", {}, "Miglioralo tu →"))
     );
   }
 

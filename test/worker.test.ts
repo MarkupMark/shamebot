@@ -130,3 +130,13 @@ describe("portale", () => {
     expect(result.json.house.notifyChanges).toBe(false);
   });
 });
+
+describe("Pagina /contribuisci", () => {
+  it("e' pubblica e punta al repository con fork e prompt", async () => {
+    const { call } = await setup();
+    const { status, json } = await call(null, "GET", "/contribuisci");
+    expect(status).toBe(200);
+    expect(json).toContain("https://github.com/MarkupMark/shamebot/fork");
+    expect(json).toContain("AGENTS.md");
+  });
+});

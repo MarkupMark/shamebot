@@ -9,6 +9,7 @@ import { runDueChecks } from "./services/scheduler.js";
 import { getDueAt } from "./services/policy.js";
 import { verifyTelegramMiniAppInitData } from "./services/web-auth.js";
 import { renderAppPage } from "./web/page.js";
+import { renderContributePage } from "./web/contribute.js";
 import { formatFrequency, parseDurationInput } from "./utils/duration.js";
 import { severityFromItalian } from "./utils/labels.js";
 import { sortTasksByDueDate } from "./utils/tasks.js";
@@ -22,7 +23,11 @@ type WorkerEnv = {
   SITE_URL?: string;
   DEFAULT_TIMEZONE?: string;
   BOT_PAUSED?: string;
+  /** Repository pubblico del progetto, mostrato nella pagina /contribuisci. */
+  REPO_URL?: string;
 };
+
+const defaultRepoUrl = "https://github.com/MarkupMark/shamebot";
 
 const sessionCookieName = "shamebot_session";
 const webLoginRequestTtlMs = 10 * 60 * 1000;
@@ -63,6 +68,10 @@ export default {
 
       if ((url.pathname === "/" || url.pathname === "/login") && request.method === "GET") {
         return htmlResponse(renderAppPage({ botUsername, siteUrl }));
+      }
+
+      if (url.pathname === "/contribuisci" && request.method === "GET") {
+        return htmlResponse(renderContributePage({ repoUrl: env.REPO_URL?.trim() || defaultRepoUrl }));
       }
 
       if (url.pathname === "/webhook" && request.method === "POST") {
