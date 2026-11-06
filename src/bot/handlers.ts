@@ -31,6 +31,8 @@ export const groupCommands = [
   { command: "modifica", description: "Modifica: n | nome | frequenza | gravità" },
   { command: "elimina", description: "Elimina: n" },
   { command: "log", description: "Ultimi eventi" },
+  { command: "fuori", description: "Sono fuori casa (serve un ok)" },
+  { command: "rientro", description: "Rientro: /rientro [nome]" },
   { command: "notifiche", description: "Avvisi on/off" },
   { command: "membri", description: "Coinquilini" },
   { command: "casa", description: "Info casa" },
@@ -53,6 +55,8 @@ const helpText = [
   "/modifica n | nome | frequenza | gravità",
   "/elimina n",
   "/log · /membri · /casa · /app",
+  "/fuori · sono fuori casa (un altro conferma)",
+  "/rientro [nome] · rientro a casa",
   "/notifiche on|off",
   "",
   "Frequenza: 3 giorni · 1 settimana · 2 volte a settimana",
@@ -468,6 +472,56 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     if (result && !result.notified) {
       await ctx.reply(`✓ Eliminata: ${result.task.name}`);
     }
+  });
+
+  // ---- Fuori casa ----
+
+  bot.command("fuori", async (ctx) => {
+    const resolved = await resolveHouse(ctx);
+    if (!resolved) {
+      return;
+    }
+
+    const open = (await store.listOpenAbsences(resolved.house.id)).find((absence) => absence.userId === resolved.user.id);
+    if (open) {
+      await ctx.reply(
+        open.status === "pending"
+          ? "🧳 Hai già chiesto: serve l'ok di un coinquilino (pulsante ✅ Confermo)."
+          : "🧳 Sei già fuori casa. Quando torni: /rientro",
+      );
+      return;
+    }
+    // Il messaggio con il pulsante "Confermo" lo scrive il servizio nel gruppo.
+    await service.requestAbsence(resolved.house, resolved.user);
+  });
+
+  bot.command("rientro", async (ctx) => {
+    const resolved = await resolveHouse(ctx);
+    if (!resolved) {
+      return;
+    }
+
+    const query = ctx.match.trim().replace(/^@/, "").toLowerCase();
+    const active = (await store.listOpenAbsences(resolved.house.id)).filter((absence) => absence.status === "active");
+    let target = active.find((absence) => absence.userId === resolved.user.id);
+    if (query) {
+      const members = await store.listMembers(resolved.house.id);
+      const matches = members.filter(
+        (member) => member.displayName.toLowerCase().startsWith(query) || member.username?.toLowerCase() === query,
+      );
+      target = active.find((absence) => matches.some((member) => member.userId === absence.userId));
+      if (!target) {
+        await ctx.reply(matches.length ? `${matches[0]!.displayName} non risulta fuori casa.` : "Nessun coinquilino con quel nome.");
+        return;
+      }
+    }
+    if (!target) {
+      const away = active.map((absence) => absence.userName);
+      await ctx.reply(away.length ? `Non risulti fuori casa. Fuori ora: ${away.join(", ")} · /rientro nome` : "Nessuno è fuori casa.");
+      return;
+    }
+    // Il riepilogo delle scadenze spostate lo scrive il servizio nel gruppo.
+    await service.endAbsence(resolved.house, resolved.user, target.id, timezone);
   });
 
   bot.command("notifiche", async (ctx) => {

@@ -18,18 +18,18 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   e un periodo (un giorno specifico, entro una settimana, entro un mese). Il turno aperto con la scadenza piu' vicina
   decide a chi tocca e quando scade; finiti i turni l'attivita' torna a chiunque con la frequenza normale.
   Promemoria ed elenco nel gruppo mostrano a chi tocca. Si imposta dal portale.
-- **Fuori casa.** Dal portale un coinquilino dice "🧳 Sono fuori casa"; nel gruppo compare la richiesta con il pulsante
+- **Fuori casa.** Dal portale (scheda Membri) o con `/fuori` un coinquilino dice "🧳 Sono fuori casa"; nel gruppo compare la richiesta con il pulsante
   "✅ Confermo" e serve l'ok di un **altro** coinquilino (dal gruppo o dal portale). Da quel momento le attivita' che
-  toccano a lui sono in pausa: niente promemoria, avvisi o insulti. Al rientro (lo segna lui o chiunque dal portale) le
+  toccano a lui sono in pausa: niente promemoria, avvisi o insulti. Al rientro (lo segna lui o chiunque, dal portale o con `/rientro [nome]`) le
   attivita' scadute mentre era via vanno fatte entro la fine di quel giorno, le altre slittano di tutto il tempo in cui
   e' stato fuori. Le attivita' di "chiunque" non vanno in pausa.
-- **Insulti segreti.** Ogni coinquilino scrive dal portale (scheda Casa) i suoi insulti per attivita' poco importanti,
+- **Insulti segreti.** Ogni coinquilino scrive dal portale (scheda Messaggi) i suoi insulti per attivita' poco importanti,
   medie e importanti: li vede solo lui. Quando un'attivita' scade, e al sollecito, il bot ne aggiunge uno a caso tra
   quelli scritti dagli **altri**, mai da chi lo riceve. Se nessuno ne ha scritti usa quelli predefiniti.
   `{nome}` diventa chi la doveva fare («ragazzi» se tocca a chiunque), `{attivita}` il nome dell'attivita'.
 - **Promemoria giornalieri.** ☀️ *Buongiorno* (cosa e' in ritardo e cosa scade oggi, poi "se vuoi fare altro
   oggi" con le prossime 3 attivita' in scadenza; predefinito alle 9:00, attivo) e 🌙 *Riepilogo serale* (cosa dovrai fare
-  domani; predefinito alle 21:00, spento). Dalla scheda Casa del portale si accendono, si sceglie l'ora e si personalizza
+  domani; predefinito alle 21:00, spento). Dalla scheda Messaggi del portale si accendono, si sceglie l'ora e si personalizza
   la frase iniziale: l'elenco sotto e' sempre automatico. Partono una volta al giorno e, se non c'e' niente da segnalare,
   di default non partono.
 - **Registro.** Ogni attivita' fatta, creata, modificata o eliminata finisce nel log (`/log` o portale).
@@ -49,6 +49,8 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
 | `/modifica n \| nome \| frequenza \| gravita'` | `-` lascia invariato un campo |
 | `/elimina n` | Elimina un'attivita' |
 | `/log [n]` | Ultime attivita' svolte e modifiche |
+| `/fuori` | Sei fuori casa: un altro coinquilino conferma col pulsante, poi le tue attivita' vanno in pausa |
+| `/rientro [nome]` | Rientro (tuo o di un coinquilino): sposta le scadenze |
 | `/notifiche on\|off` | Avvisi sulle modifiche |
 | `/membri`, `/casa`, `/app`, `/help` | Info e aiuto |
 

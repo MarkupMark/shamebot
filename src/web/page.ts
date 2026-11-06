@@ -46,6 +46,13 @@ const PAGE_TEMPLATE = `<!doctype html>
   input[type=number] { width: 80px; }
   nav { display: flex; gap: 6px; margin: 12px 0; }
   nav button { flex: 1; }
+  nav button.minor { flex: 0 0 auto; background: transparent; color: var(--muted); font-size: .85rem; padding: 9px 10px; }
+  nav button.minor.active { background: var(--card); color: var(--text); border-color: var(--line); }
+  @media (max-width: 480px) { nav button.minor .lbl { display: none; } }
+  .member { display: flex; align-items: center; gap: 8px; }
+  .member .grow small { color: var(--muted); font-size: .8rem; margin-left: 4px; }
+  .badge { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .badge.out { border-color: var(--warn); color: var(--warn); }
   nav button.active { background: var(--accent); color: var(--accent-text); border-color: transparent; }
   .task-name { font-weight: 600; }
   .due-ok { color: var(--ok); } .due-soon { color: var(--warn); } .due-late { color: var(--late); font-weight: 600; }
@@ -660,7 +667,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     var open = (state.data.absences || []).filter(function (a) { return a.userId === state.data.viewerId; })[0];
     return h("div", { class: "card" },
       h("p", { style: "margin:0 0 6px" }, "Vai via qualche giorno? Dillo qui: quando un coinquilino conferma, le attivita' che toccano a te vanno in pausa (niente avvisi ne' insulti)."),
-      h("p", { class: "muted", style: "margin:0 0 10px" }, "Al rientro, quelle scadute mentre eri via vanno fatte entro la fine di quel giorno; le altre slittano di tutti i giorni in cui sei stato fuori. Il rientro lo segni tu o un coinquilino."),
+      h("p", { class: "muted", style: "margin:0 0 10px" }, "Al rientro, quelle scadute mentre eri via vanno fatte entro la fine di quel giorno; le altre slittano di tutti i giorni in cui sei stato fuori. Il rientro lo segni tu o un coinquilino. Dal gruppo Telegram: /fuori e /rientro."),
       open ? h("p", { class: "muted", style: "margin:0" }, open.status === "pending" ? "Richiesta inviata: aspetta l'ok di un coinquilino (lo vedi in alto)." : "Sei fuori casa: quando torni premi «Sono rientrato» in alto.")
            : h("button", { class: "primary", onclick: function () { absenceAction("/absences", "Avvisare il gruppo che sei fuori casa?"); } }, "🧳 Sono fuori casa")
     );
@@ -825,31 +832,46 @@ const PAGE_TEMPLATE = `<!doctype html>
     );
   }
 
-  function viewHouse() {
+  /** Scheda Membri: chi c'e' in casa, chi e' fuori, e il pulsante "Sono fuori casa". */
+  function viewMembers() {
+    var absences = state.data.absences || [];
     var members = h("ul", { class: "plain" });
     state.data.members.forEach(function (m) {
-      members.appendChild(h("li", {}, m.displayName + (m.username ? " (@" + m.username + ")" : "")));
+      var absence = absences.filter(function (a) { return a.userId === m.id; })[0];
+      var badge = !absence ? null
+        : absence.status === "active" ? h("span", { class: "badge out" }, "🧳 fuori casa " + sinceLabel(absence.startsAt))
+        : h("span", { class: "badge" }, "🧳 attende l'ok");
+      members.appendChild(h("li", { class: "member" },
+        h("div", { class: "grow" }, m.displayName, m.id === state.data.viewerId ? h("small", {}, "(tu)") : (m.username ? h("small", {}, "@" + m.username) : null)),
+        badge
+      ));
     });
-    var notify = h("input", { type: "checkbox", onchange: function (e) {
-      api("PATCH", "/api/houses/" + state.houseId, { notifyChanges: e.target.checked }).then(loadHouse).catch(fail);
-    } });
-    notify.checked = state.data.house.notifyChanges;
     return h("div", {},
       h("h2", {}, "Coinquilini"),
       h("div", { class: "card" }, members),
       h("h2", {}, "Fuori casa"),
       awayCard(),
+      h("div", { class: "row", style: "margin-top:16px" },
+        h("button", { onclick: function () { api("POST", "/logout").then(function () { state.me = null; renderLogin(); }); } }, "Esci")
+      )
+    );
+  }
+
+  /** Scheda Messaggi: tutto cio' che il bot scrive nel gruppo (promemoria, insulti, avvisi sulle modifiche). */
+  function viewMessages() {
+    var notify = h("input", { type: "checkbox", onchange: function (e) {
+      api("PATCH", "/api/houses/" + state.houseId, { notifyChanges: e.target.checked }).then(loadHouse).catch(fail);
+    } });
+    notify.checked = state.data.house.notifyChanges;
+    return h("div", {},
       h("h2", {}, "Promemoria nel gruppo"),
       state.data.digests.map(digestCard),
       h("h2", {}, "I tuoi insulti segreti"),
       insultsCard(),
-      h("h2", {}, "Avvisi"),
+      h("h2", {}, "Avvisi sulle modifiche"),
       h("div", { class: "card" },
         h("label", { class: "check" }, notify, "Avvisa il gruppo quando un'attivita' viene creata o modificata"),
         h("p", { class: "muted" }, "E' il valore predefinito: puoi cambiarlo caso per caso quando salvi.")
-      ),
-      h("div", { class: "row", style: "margin-top:16px" },
-        h("button", { onclick: function () { api("POST", "/logout").then(function () { state.me = null; renderLogin(); }); } }, "Esci")
       )
     );
   }
@@ -882,11 +904,14 @@ const PAGE_TEMPLATE = `<!doctype html>
     }
 
     var tabs = h("nav", {});
-    [["tasks", "Attivita'"], ["log", "Registro"], ["house", "Casa"]].forEach(function (t) {
+    [["tasks", "Attivita'"], ["members", "Membri"], ["messages", "Messaggi"]].forEach(function (t) {
       tabs.appendChild(h("button", { class: state.tab === t[0] ? "active" : "", onclick: function () { state.tab = t[0]; render(); } }, t[1]));
     });
+    // Il registro e' secondario: un pulsante piccolo in fondo alla barra (solo icona su telefono).
+    tabs.appendChild(h("button", { class: "minor" + (state.tab === "log" ? " active" : ""), title: "Registro", "aria-label": "Registro",
+      onclick: function () { state.tab = "log"; render(); } }, "🧾", h("span", { class: "lbl" }, " Registro")));
 
-    var view = state.tab === "tasks" ? viewTasks() : state.tab === "log" ? viewLog() : viewHouse();
+    var view = state.tab === "members" ? viewMembers() : state.tab === "messages" ? viewMessages() : state.tab === "log" ? viewLog() : viewTasks();
     var parts = [header, viewAbsences(), viewTimeline(), tabs, state.error ? h("p", { class: "error" }, state.error) : null, view].filter(Boolean);
     root.replaceChildren.apply(root, parts);
   }
