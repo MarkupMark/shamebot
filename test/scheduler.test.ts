@@ -89,3 +89,11 @@ describe("runDueChecks", () => {
     expect(sent[0]).toBe("😬 Umido · scaduta · tocca a Luca\nLuca, Umido è scaduta. La casa ti guarda 👀");
   });
 });
+
+describe("fillInsult", () => {
+  it("sostituisce i segnaposto e toglie lo spazio prima della punteggiatura", async () => {
+    const { fillInsult } = await import("../src/services/insults.js");
+    expect(fillInsult("Ehi {nome} , hai lasciato {attivita} !", { name: "Umido", assigneeName: "Luca" })).toBe("Ehi Luca, hai lasciato Umido!");
+    expect(fillInsult("{nome} che schifo", { name: "Umido", assigneeName: null })).toBe("ragazzi che schifo");
+  });
+});

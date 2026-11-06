@@ -31,5 +31,9 @@ export const randomPick: Chooser = (items) => items[Math.floor(Math.random() * i
 
 /** Riempie i segnaposto: senza assegnatario l'insulto va a tutta la casa ("ragazzi"). */
 export function fillInsult(template: string, task: Pick<Task, "name" | "assigneeName">): string {
-  return template.replace(/\{nome\}/gi, task.assigneeName ?? "ragazzi").replace(/\{attivit[aà]\}/gi, task.name);
+  return template
+    .replace(/\{nome\}/gi, task.assigneeName ?? "ragazzi")
+    .replace(/\{attivit[aà]\}/gi, task.name)
+    // Lo spazio che il portale mette dopo un segnaposto non deve restare davanti alla punteggiatura ("Luca ," -> "Luca,").
+    .replace(/ +([,.!?;:])/g, "$1");
 }

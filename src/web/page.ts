@@ -77,6 +77,10 @@ const PAGE_TEMPLATE = `<!doctype html>
   .insult-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
   .insult-row input { flex: 1; min-width: 0; }
   .insult-row button { padding: 6px 10px; }
+  .insult-item { margin-top: 10px; }
+  .tokens { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+  .tokens button { font-size: .78rem; padding: 3px 10px; border-radius: 99px; color: var(--muted); }
+  .bubble.empty { color: var(--muted); font-style: italic; }
   .head { align-items: flex-start; flex-wrap: nowrap; }
   .head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; margin-top: 10px; }
   .head-side select { max-width: 150px; }
@@ -681,7 +685,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     var sev = state.insultSev;
     var info = state.data.insults.filter(function (x) { return x.severity === sev; })[0];
     var draft = state.insultDraft[sev];
-    if (!draft) { draft = { messages: info.mine.slice(), dirty: false }; state.insultDraft[sev] = draft; }
+    if (!draft) { draft = { messages: info.mine.length ? info.mine.slice() : [""], dirty: false, active: 0 }; state.insultDraft[sev] = draft; }
 
     var seg = h("div", { class: "seg" });
     ["low", "medium", "high"].forEach(function (k) {
@@ -694,18 +698,49 @@ const PAGE_TEMPLATE = `<!doctype html>
     var someone = (state.data.members.filter(function (m) { return m.id !== state.data.viewerId; })[0] || { displayName: "Anna" }).displayName;
     function refresh() {
       save.disabled = !draft.dirty;
-      var first = draft.messages.filter(function (m) { return m.trim(); })[0] || info.defaults[0];
+      // Esempio: il messaggio che stai scrivendo (o il primo scritto); niente esempio finche' non scrivi nulla.
+      var current = draft.messages[draft.active];
+      var text = current && current.trim() ? current : draft.messages.filter(function (m) { return m.trim(); })[0];
+      if (!text) {
+        example.className = "bubble empty";
+        example.textContent = "Scrivi un insulto per vedere come arrivera' nel gruppo.";
+        return;
+      }
+      example.className = "bubble";
       example.textContent = "😬 Pulire il bagno · scaduta · tocca a " + someone + String.fromCharCode(10) +
-        first.split("{nome}").join(someone).split("{attivita}").join("Pulire il bagno").split("{attività}").join("Pulire il bagno");
+        text.split("{nome}").join(someone).split("{attivita}").join("Pulire il bagno").split("{attività}").join("Pulire il bagno").replace(/ +([,.!?;:])/g, "$1");
     }
-    function drawList() {
+    function drawList(focusIndex) {
       list.replaceChildren();
       if (!draft.messages.length) list.appendChild(h("p", { class: "muted", style: "margin:8px 0 0" }, "Non hai ancora scritto insulti per questa gravita'."));
       draft.messages.forEach(function (msg, i) {
-        list.appendChild(h("div", { class: "insult-row" },
-          h("input", { type: "text", maxlength: "200", value: msg, placeholder: info.defaults[i % info.defaults.length], oninput: function (e) { draft.messages[i] = e.target.value; draft.dirty = true; refresh(); } }),
-          h("button", { class: "danger ghost", title: "Elimina", onclick: function () { draft.messages.splice(i, 1); draft.dirty = true; drawList(); refresh(); } }, "✕")
+        var input = h("input", { type: "text", maxlength: "200", value: msg, placeholder: "Scrivi il tuo insulto...",
+          onfocus: function () { draft.active = i; refresh(); },
+          oninput: function (e) { draft.messages[i] = e.target.value; draft.active = i; draft.dirty = true; refresh(); } });
+        // Inserisce il segnaposto dove si trova il cursore (o in fondo).
+        function insert(token) {
+          var start = input.selectionStart === null ? input.value.length : input.selectionStart;
+          var end = input.selectionEnd === null ? start : input.selectionEnd;
+          var before = input.value.slice(0, start), after = input.value.slice(end);
+          var spaced = (before && before.slice(-1) !== " " ? " " : "") + token + (after.charAt(0) !== " " ? " " : "");
+          input.value = (before + spaced + after).slice(0, 200);
+          var caret = Math.min(input.value.length, before.length + spaced.length);
+          draft.messages[i] = input.value; draft.active = i; draft.dirty = true;
+          input.focus(); input.setSelectionRange(caret, caret);
+          refresh();
+        }
+        function tokenButton(label, token) {
+          // mousedown + preventDefault: il campo non perde il cursore quando premi il pulsante.
+          return h("button", { type: "button", onmousedown: function (e) { e.preventDefault(); }, onclick: function () { insert(token); } }, label);
+        }
+        list.appendChild(h("div", { class: "insult-item" },
+          h("div", { class: "insult-row" },
+            input,
+            h("button", { class: "danger ghost", title: "Elimina", onclick: function () { draft.messages.splice(i, 1); draft.active = 0; draft.dirty = true; drawList(); refresh(); } }, "✕")
+          ),
+          h("div", { class: "tokens" }, tokenButton("+ 👤 nome", "{nome}"), tokenButton("+ 🧹 attivita'", "{attivita}"))
         ));
+        if (focusIndex === i) setTimeout(function () { input.focus(); }, 0);
       });
     }
     drawList();
@@ -722,10 +757,10 @@ const PAGE_TEMPLATE = `<!doctype html>
       : "Gli altri ne hanno scritti " + info.byOthers + " (segreti anche per te 🤫).";
 
     return h("div", { class: "card" },
-      h("p", { class: "muted", style: "margin:0 0 10px" }, "🤫 Solo tu vedi i tuoi insulti. Quando un'attivita' scade (e al sollecito) il bot ne sceglie uno a caso tra quelli scritti dai coinquilini: i tuoi colpiscono gli altri, mai te. Scrivi {nome} per chi la doveva fare e {attivita} per l'attivita'."),
+      h("p", { class: "muted", style: "margin:0 0 10px" }, "🤫 Solo tu vedi i tuoi insulti. Quando un'attivita' scade (e al sollecito) il bot ne sceglie uno a caso tra quelli scritti dai coinquilini: i tuoi colpiscono gli altri, mai te. Con i pulsanti 👤 nome e 🧹 attivita' puoi inserire chi la doveva fare e cosa: sono facoltativi."),
       seg,
       list,
-      h("button", { style: "margin-top:8px", onclick: function () { draft.messages.push(""); draft.dirty = true; drawList(); refresh(); } }, "+ Aggiungi"),
+      h("button", { style: "margin-top:10px", onclick: function () { draft.messages.push(""); draft.active = draft.messages.length - 1; drawList(draft.active); refresh(); } }, "+ Aggiungi un altro"),
       h("div", { class: "muted", style: "font-size:.8rem;margin-top:8px" }, others),
       h("div", { class: "bubble-label" }, "Esempio"),
       example,
