@@ -16,11 +16,20 @@ export async function safeSend(send: SendToChat, chatId: number, text: string): 
   }
 }
 
-export function formatTaskLine(task: Task, index: number, now: Date): string {
+/** Quante attivita' mostra /attivita prima del pulsante "Mostra altre". */
+export const compactTaskCount = 5;
+
+/** Riga compatta per /attivita: solo nome ed entro quando va fatta. */
+export function formatTaskBullet(task: Task, now: Date): string {
   const leftMs = getDueAt(task).getTime() - now.getTime();
-  const state = leftMs < 0 ? `⚠️ ritardo ${formatShortDuration(leftMs)}` : `tra ${formatShortDuration(leftMs)}`;
-  const who = task.assigneeName ? ` · 👤 ${task.assigneeName}` : "";
-  return `${index}. ${task.name} · ${formatFrequencyShort(task.intervalMs)} · ${state}${who}`;
+  const state = leftMs < 0 ? `⚠️ in ritardo di ${formatShortDuration(leftMs)}` : `entro ${formatShortDuration(leftMs)}`;
+  return `• ${task.name} · ${state}`;
+}
+
+/** Elenco puntato delle attivita' (gia' ordinate per scadenza); `limit` taglia alle prime N. */
+export function formatTaskList(tasks: Task[], now: Date, limit?: number): string {
+  const shown = limit === undefined ? tasks : tasks.slice(0, limit);
+  return shown.map((task) => formatTaskBullet(task, now)).join("\n");
 }
 
 export function taskCreatedMessage(actorName: string, task: Task): string {

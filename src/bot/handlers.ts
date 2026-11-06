@@ -3,7 +3,7 @@ import type { Context } from "grammy";
 import type { AppUser, House, LogEntry } from "../types/domain.js";
 import type { HouseStore } from "../services/store.js";
 import { HouseService } from "../services/houses.js";
-import { formatTaskLine, safeSend, type SendToChat } from "../services/notify.js";
+import { compactTaskCount, formatTaskList, safeSend, type SendToChat } from "../services/notify.js";
 import { formatFrequencyShort, parseDurationInput } from "../utils/duration.js";
 import { severityFromItalian, severityToItalian } from "../utils/labels.js";
 import { parseTaskNumber, sortTasksByDueDate } from "../utils/tasks.js";
@@ -130,7 +130,10 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     }
 
     const now = new Date();
-    await ctx.reply(tasks.map((task, index) => formatTaskLine(task, index + 1, now)).join("\n"));
+    const hidden = tasks.length - compactTaskCount;
+    await ctx.reply(formatTaskList(tasks, now, compactTaskCount), {
+      ...(hidden > 0 ? { reply_markup: new InlineKeyboard().text(`Mostra altre ${hidden}`, "tasks:all") } : {}),
+    });
   }
 
   async function showDonePicker(ctx: Context, { house }: Resolved): Promise<void> {
@@ -299,6 +302,27 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     if (task) {
       await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => undefined);
     }
+  });
+
+  /** "Mostra altre" / "Mostra meno": riscrive lo stesso messaggio con l'elenco completo o compatto. */
+  bot.callbackQuery(/^tasks:(all|short)$/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const resolved = await resolveHouse(ctx);
+    if (!resolved) {
+      return;
+    }
+
+    const tasks = await sortedTasks(resolved.house.id);
+    const all = ctx.match[1] === "all";
+    const hidden = tasks.length - compactTaskCount;
+    const keyboard =
+      hidden <= 0
+        ? undefined
+        : all
+          ? new InlineKeyboard().text("Mostra meno", "tasks:short")
+          : new InlineKeyboard().text(`Mostra altre ${hidden}`, "tasks:all");
+    const text = tasks.length ? formatTaskList(tasks, new Date(), all ? undefined : compactTaskCount) : "Nessuna attività.";
+    await ctx.editMessageText(text, keyboard ? { reply_markup: keyboard } : {}).catch(() => undefined);
   });
 
   bot.callbackQuery(/^cmd:(tasks|done|log)$/, async (ctx) => {

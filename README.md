@@ -29,7 +29,7 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
 | Comando | Cosa fa |
 | --- | --- |
 | `/start` | Attiva la casa per questo gruppo |
-| `/attivita` | Elenco con scadenze |
+| `/attivita` | Le 5 attivita' piu' urgenti ("Mostra altre" per tutte) |
 | `/fatto [n]` | Segna come fatta (senza numero mostra i pulsanti) |
 | `/nuova nome \| frequenza \| gravita'` | Es. `/nuova Pulire il bagno \| 2 volte a settimana \| importante` |
 | `/modifica n \| nome \| frequenza \| gravita'` | `-` lascia invariato un campo |
@@ -43,7 +43,9 @@ Frequenze accettate: `3 giorni`, `1 settimana`, `12 ore`, `2 volte a settimana`,
 Digitando `/` Telegram mostra il menu dei comandi (diverso in chat privata e nel gruppo); `/start` e `/help` nel gruppo
 aggiungono i pulsanti rapidi Attività, Fatto e Log. Dopo ogni deploy che cambia i comandi apri `/setup` una volta.
 
-I numeri di `/fatto`, `/modifica` e `/elimina` sono quelli dell'ultimo `/attivita` (ordinato per scadenza).
+`/attivita` mostra un elenco puntato compatto (nome · entro quando) con le 5 attivita' piu' vicine alla scadenza;
+il pulsante "Mostra altre" apre l'elenco completo. I numeri di `/fatto`, `/modifica` e `/elimina` sono la posizione
+nell'elenco, contando dall'alto.
 
 ## Portale web / Mini App
 
