@@ -1,0 +1,13 @@
+node_modules
+dist
+coverage
+.env
+.dev.vars
+data
+.wrangler
+.DS_Store
+
+# Materiale personale/storico non pubblicato
+archive
+tmp.ts
+.claude

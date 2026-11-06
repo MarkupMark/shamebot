@@ -1,0 +1,16 @@
+name = "shame"
+main = "src/worker.ts"
+compatibility_date = "2025-03-14"
+
+[vars]
+BOT_USERNAME = "vergognati_bot"
+SITE_URL = "https://shame.polipres.workers.dev"
+BOT_PAUSED = "false"
+
+[triggers]
+crons = ["* * * * *"]
+
+[[d1_databases]]
+binding = "SHAMEBOT_DB"
+database_name = "shamebot-db"
+database_id = "77c821f4-5687-4a70-997a-f847e23a4f61"

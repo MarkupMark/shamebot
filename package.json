@@ -1,0 +1,38 @@
+{
+  "name": "shamebot",
+  "version": "1.0.0",
+  "description": "Bot Telegram per coinquilini: attivita' di casa condivise, promemoria e registro nel gruppo.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "cf:deploy": "wrangler deploy",
+    "cf:d1:migrate": "wrangler d1 migrations apply shamebot-db --remote"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "house",
+    "chores",
+    "sqlite"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "^17.2.3",
+    "grammy": "^1.38.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.73.0"
+  }
+}

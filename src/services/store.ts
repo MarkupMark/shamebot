@@ -1,0 +1,698 @@
+import type {
+  AppUser,
+  AssignMode,
+  SlotKind,
+  TaskSlot,
+  House,
+  HouseMember,
+  LogEntry,
+  LogKind,
+  NoticeStageKey,
+  Task,
+  TaskSeverity,
+  TaskWithHouse,
+  WebLoginRequest,
+} from "../types/domain.js";
+import type { Db, SqlParam, SqlRow } from "./db.js";
+import { describeTaskChanges } from "../utils/tasks.js";
+
+export type TelegramIdentity = {
+  telegramId: number;
+  username: string | null;
+  displayName: string;
+};
+
+export type SlotInput = {
+  userId: number;
+  kind: SlotKind;
+  startsAt: string;
+  dueAt: string;
+};
+
+export type AssignmentInput = {
+  mode: AssignMode;
+  /** 'single': [id]; 'alternate': ordine dei turni (almeno 2). Ignorato per 'anyone' e 'custom'. */
+  userIds?: number[];
+  /** Solo 'custom': sostituisce i turni ancora aperti (quelli gia' fatti restano nello storico). */
+  slots?: SlotInput[];
+};
+
+export type TaskUpdateInput = {
+  name?: string;
+  intervalMs?: number;
+  severity?: TaskSeverity;
+  assignment?: AssignmentInput;
+};
+
+export type HouseSetup = {
+  house: House;
+  created: boolean;
+  adoptedTasks: number;
+};
+
+export type TaskUpdateResult = {
+  before: Task;
+  task: Task;
+  changes: string[];
+};
+
+const sessionTtlMs = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Colonne e join comuni per leggere un'attivita' con l'assegnatario corrente:
+ * - custom: l'utente del turno aperto con la scadenza piu' vicina (che decide anche la scadenza);
+ * - single: il primo (unico) utente della lista;
+ * - alternate: l'utente di turno secondo assign_turn.
+ */
+const taskColumns = `
+  t.*, u.display_name AS last_completed_by_name,
+  s.starts_at AS slot_starts_at, s.due_at AS slot_due_at,
+  au.id AS assignee_id, au.display_name AS assignee_name
+`;
+
+const taskJoins = `
+  LEFT JOIN users u ON u.id = t.last_completed_by
+  LEFT JOIN task_slots s ON t.assign_mode = 'custom' AND s.id = (
+    SELECT id FROM task_slots WHERE task_id = t.id AND completed_at IS NULL ORDER BY due_at, id LIMIT 1
+  )
+  LEFT JOIN users au ON au.id = CASE t.assign_mode
+    WHEN 'custom' THEN s.user_id
+    WHEN 'single' THEN json_extract(t.assign_users, '$[0]')
+    WHEN 'alternate' THEN json_extract(t.assign_users, '$[' || (t.assign_turn % MAX(json_array_length(t.assign_users), 1)) || ']')
+  END
+`;
+
+const taskSelect = `SELECT ${taskColumns} FROM tasks t ${taskJoins}`;
+
+const logSelect = `
+  SELECT l.*, COALESCE(u.display_name, 'Qualcuno') AS user_name,
+    CASE WHEN l.kind IN ('created', 'deleted') AND l.restored_at IS NULL AND l.task_id IS NOT NULL
+              AND l.task_interval_ms IS NOT NULL AND l.task_severity IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.id = l.task_id)
+         THEN 1 ELSE 0 END AS restorable
+  FROM house_log l LEFT JOIN users u ON u.id = l.user_id
+`;
+
+export class HouseStore {
+  constructor(private readonly db: Db) {}
+
+  // ---- Utenti ----
+
+  async upsertUser(identity: TelegramIdentity): Promise<AppUser> {
+    const now = new Date().toISOString();
+    const byTelegram = await this.db.first("SELECT * FROM users WHERE telegram_id = ?", [identity.telegramId]);
+    if (byTelegram) {
+      await this.db.run(
+        "UPDATE users SET username = ?, display_name = ?, updated_at = ? WHERE id = ?",
+        [identity.username, identity.displayName, now, Number(byTelegram.id)],
+      );
+      return (await this.getUserById(Number(byTelegram.id))) as AppUser;
+    }
+
+    await this.db.run(
+      "INSERT INTO users (telegram_id, username, display_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+      [identity.telegramId, identity.username, identity.displayName, now, now],
+    );
+    return (await this.getUserByTelegramId(identity.telegramId)) as AppUser;
+  }
+
+  async getUserById(id: number): Promise<AppUser | null> {
+    const row = await this.db.first("SELECT * FROM users WHERE id = ?", [id]);
+    return row ? mapUser(row) : null;
+  }
+
+  async getUserByTelegramId(telegramId: number): Promise<AppUser | null> {
+    const row = await this.db.first("SELECT * FROM users WHERE telegram_id = ?", [telegramId]);
+    return row ? mapUser(row) : null;
+  }
+
+  // ---- Case e membri ----
+
+  /**
+   * Crea la casa per un gruppo Telegram (o la restituisce se esiste gia').
+   * La prima casa creata adotta le attivita' preesistenti senza casa, facendole ripartire da adesso.
+   */
+  async getOrCreateHouse(chatId: number, name: string, createdBy: number, now: Date = new Date()): Promise<HouseSetup> {
+    const existing = await this.getHouseByChatId(chatId);
+    if (existing) {
+      return { house: existing, created: false, adoptedTasks: 0 };
+    }
+
+    const iso = now.toISOString();
+    const result = await this.db.run(
+      "INSERT INTO houses (name, chat_id, notify_changes, created_by, created_at, updated_at) VALUES (?, ?, 1, ?, ?, ?)",
+      [name, chatId, createdBy, iso, iso],
+    );
+    const houseId = result.lastRowId;
+
+    const adopted = await this.db.run(
+      `UPDATE tasks
+       SET house_id = ?, cycle_anchor_at = ?, reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL,
+           overdue_notice_sent_at = NULL, nudge_sent_at = NULL, updated_at = ?
+       WHERE house_id IS NULL`,
+      [houseId, iso, iso],
+    );
+
+    return {
+      house: (await this.getHouse(houseId)) as House,
+      created: true,
+      adoptedTasks: adopted.changes,
+    };
+  }
+
+  async getHouse(id: number): Promise<House | null> {
+    const row = await this.db.first("SELECT * FROM houses WHERE id = ?", [id]);
+    return row ? mapHouse(row) : null;
+  }
+
+  async getHouseByChatId(chatId: number): Promise<House | null> {
+    const row = await this.db.first("SELECT * FROM houses WHERE chat_id = ?", [chatId]);
+    return row ? mapHouse(row) : null;
+  }
+
+  async listHousesForUser(userId: number): Promise<House[]> {
+    const rows = await this.db.all(
+      `SELECT h.* FROM houses h
+       JOIN house_members m ON m.house_id = h.id
+       WHERE m.user_id = ?
+       ORDER BY h.name COLLATE NOCASE`,
+      [userId],
+    );
+    return rows.map(mapHouse);
+  }
+
+  async setHouseNotifyChanges(houseId: number, notifyChanges: boolean): Promise<void> {
+    await this.db.run("UPDATE houses SET notify_changes = ?, updated_at = ? WHERE id = ?", [
+      notifyChanges ? 1 : 0,
+      new Date().toISOString(),
+      houseId,
+    ]);
+  }
+
+  async renameHouse(houseId: number, name: string): Promise<void> {
+    await this.db.run("UPDATE houses SET name = ?, updated_at = ? WHERE id = ?", [name, new Date().toISOString(), houseId]);
+  }
+
+  async addMember(houseId: number, userId: number): Promise<boolean> {
+    const result = await this.db.run(
+      "INSERT OR IGNORE INTO house_members (house_id, user_id, joined_at) VALUES (?, ?, ?)",
+      [houseId, userId, new Date().toISOString()],
+    );
+    return result.changes > 0;
+  }
+
+  async isMember(houseId: number, userId: number): Promise<boolean> {
+    const row = await this.db.first("SELECT 1 AS ok FROM house_members WHERE house_id = ? AND user_id = ?", [houseId, userId]);
+    return Boolean(row);
+  }
+
+  async listMembers(houseId: number): Promise<HouseMember[]> {
+    const rows = await this.db.all(
+      `SELECT u.id AS user_id, u.display_name, u.username, m.joined_at
+       FROM house_members m JOIN users u ON u.id = m.user_id
+       WHERE m.house_id = ?
+       ORDER BY m.joined_at`,
+      [houseId],
+    );
+    return rows.map((row) => ({
+      userId: Number(row.user_id),
+      displayName: String(row.display_name),
+      username: row.username ? String(row.username) : null,
+      joinedAt: String(row.joined_at),
+    }));
+  }
+
+  // ---- Attivita' ----
+
+  async createTask(
+    houseId: number,
+    userId: number,
+    name: string,
+    intervalMs: number,
+    severity: TaskSeverity,
+    now: Date = new Date(),
+    detail: string | null = null,
+    assignment: AssignmentInput | null = null,
+  ): Promise<Task> {
+    const iso = now.toISOString();
+    const result = await this.db.run(
+      `INSERT INTO tasks (owner_id, house_id, name, interval_ms, severity, cycle_anchor_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [userId, houseId, name, intervalMs, severity, iso, iso, iso],
+    );
+    if (assignment && assignment.mode !== "anyone") {
+      await this.saveAssignment(result.lastRowId, assignment, now);
+    }
+    const task = (await this.getTask(houseId, result.lastRowId)) as Task;
+    await this.addLog(houseId, userId, task.id, task.name, "created", detail, now, task);
+    return task;
+  }
+
+  /** Turni personalizzati ancora da fare, per tutte le attivita' della casa, in ordine di scadenza. */
+  async listOpenSlots(houseId: number): Promise<TaskSlot[]> {
+    const rows = await this.db.all(
+      `SELECT s.*, u.display_name AS user_name
+       FROM task_slots s
+       JOIN tasks t ON t.id = s.task_id
+       JOIN users u ON u.id = s.user_id
+       WHERE t.house_id = ? AND s.completed_at IS NULL
+       ORDER BY s.due_at, s.id`,
+      [houseId],
+    );
+    return rows.map((row) => ({
+      id: Number(row.id),
+      taskId: Number(row.task_id),
+      userId: Number(row.user_id),
+      userName: String(row.user_name),
+      kind: String(row.kind) as SlotKind,
+      startsAt: String(row.starts_at),
+      dueAt: String(row.due_at),
+    }));
+  }
+
+  /** Salva la modalita' di assegnazione; per 'custom' sostituisce i turni aperti. */
+  private async saveAssignment(taskId: number, assignment: AssignmentInput, now: Date = new Date()): Promise<void> {
+    const userIds = assignment.mode === "single" || assignment.mode === "alternate" ? (assignment.userIds ?? []) : [];
+    const users = userIds.length ? JSON.stringify(userIds) : null;
+    // Il turno corrente resta dov'e' se modalita' e utenti non cambiano (es. si modifica solo il nome).
+    await this.db.run(
+      `UPDATE tasks SET assign_mode = ?, assign_users = ?,
+         assign_turn = CASE WHEN assign_mode = ? AND COALESCE(assign_users, '') = ? THEN assign_turn ELSE 0 END
+       WHERE id = ?`,
+      [assignment.mode, users, assignment.mode, users ?? "", taskId],
+    );
+
+    await this.db.run("DELETE FROM task_slots WHERE task_id = ? AND completed_at IS NULL", [taskId]);
+    if (assignment.mode === "custom") {
+      for (const slot of assignment.slots ?? []) {
+        await this.db.run(
+          "INSERT INTO task_slots (task_id, user_id, kind, starts_at, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+          [taskId, slot.userId, slot.kind, slot.startsAt, slot.dueAt, now.toISOString()],
+        );
+      }
+    }
+  }
+
+  /** Descrizione breve dell'assegnazione, per registro e avvisi (es. "a turno: Luca, Anna"). */
+  async describeAssignment(houseId: number, taskId: number): Promise<string> {
+    const task = await this.getTask(houseId, taskId);
+    if (!task) {
+      return "";
+    }
+    const names = await this.userNames(task.assignUserIds);
+    switch (task.assignMode) {
+      case "anyone":
+        return "chiunque";
+      case "single":
+        return `solo ${names[0] ?? "?"}`;
+      case "alternate":
+        return `a turno: ${names.join(", ")}`;
+      case "custom": {
+        const open = (await this.listOpenSlots(houseId)).filter((slot) => slot.taskId === taskId);
+        return `personalizzata (${open.length} turn${open.length === 1 ? "o" : "i"})`;
+      }
+    }
+  }
+
+  private async slotSignature(houseId: number, taskId: number): Promise<string> {
+    const open = (await this.listOpenSlots(houseId)).filter((slot) => slot.taskId === taskId);
+    return JSON.stringify(open.map((slot) => [slot.userId, slot.kind, slot.startsAt, slot.dueAt]));
+  }
+
+  private async userNames(ids: number[]): Promise<string[]> {
+    const names: string[] = [];
+    for (const id of ids) {
+      const user = await this.getUserById(id);
+      names.push(user?.displayName ?? "?");
+    }
+    return names;
+  }
+
+  async listTasks(houseId: number): Promise<Task[]> {
+    const rows = await this.db.all(`${taskSelect} WHERE t.house_id = ?`, [houseId]);
+    return rows.map(mapTask);
+  }
+
+  async getTask(houseId: number, taskId: number): Promise<Task | null> {
+    const row = await this.db.first(`${taskSelect} WHERE t.house_id = ? AND t.id = ?`, [houseId, taskId]);
+    return row ? mapTask(row) : null;
+  }
+
+  /** Modifica un'attivita'. Se cambia la frequenza i promemoria del ciclo corrente vengono ricalcolati. */
+  async updateTask(houseId: number, taskId: number, userId: number, updates: TaskUpdateInput): Promise<TaskUpdateResult | null> {
+    const before = await this.getTask(houseId, taskId);
+    if (!before) {
+      return null;
+    }
+
+    const name = updates.name ?? before.name;
+    const intervalMs = updates.intervalMs ?? before.intervalMs;
+    const severity = updates.severity ?? before.severity;
+    const changes = describeTaskChanges(before, { name, intervalMs, severity });
+
+    if (updates.assignment) {
+      const beforeLabel = await this.describeAssignment(houseId, taskId);
+      const beforeSlots = await this.slotSignature(houseId, taskId);
+      await this.saveAssignment(taskId, updates.assignment);
+      const afterLabel = await this.describeAssignment(houseId, taskId);
+      if (beforeLabel !== afterLabel) {
+        changes.push(`assegnazione ${beforeLabel} → ${afterLabel}`);
+      } else if (beforeSlots !== (await this.slotSignature(houseId, taskId))) {
+        changes.push("turni aggiornati");
+      }
+    }
+
+    if (changes.length > 0) {
+      await this.db.run(
+        `UPDATE tasks
+         SET name = ?, interval_ms = ?, severity = ?, updated_at = ?,
+             reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL,
+             overdue_notice_sent_at = NULL, nudge_sent_at = NULL
+         WHERE id = ? AND house_id = ?`,
+        [name, intervalMs, severity, new Date().toISOString(), taskId, houseId],
+      );
+      await this.addLog(houseId, userId, taskId, name, "updated", changes.join("; "));
+    }
+
+    return { before, task: (await this.getTask(houseId, taskId)) as Task, changes };
+  }
+
+  /** Segna l'attivita' come fatta da userId e fa ripartire il ciclo. */
+  async completeTask(houseId: number, taskId: number, userId: number, completedAt: Date): Promise<Task | null> {
+    const task = await this.getTask(houseId, taskId);
+    if (!task) {
+      return null;
+    }
+
+    const iso = completedAt.toISOString();
+    // Chiude il turno personalizzato corrente (chiunque l'abbia fatto) oppure passa il turno al prossimo.
+    if (task.assignMode === "custom" && task.slotDueAt) {
+      await this.db.run(
+        `UPDATE task_slots SET completed_at = ?, completed_by = ?
+         WHERE id = (SELECT id FROM task_slots WHERE task_id = ? AND completed_at IS NULL ORDER BY due_at, id LIMIT 1)`,
+        [iso, userId, taskId],
+      );
+    }
+    await this.db.run(
+      `UPDATE tasks
+       SET cycle_anchor_at = ?, last_completed_by = ?, completed_count = completed_count + 1, updated_at = ?,
+           assign_turn = CASE WHEN assign_mode = 'alternate' THEN assign_turn + 1 ELSE assign_turn END,
+           reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL,
+           overdue_notice_sent_at = NULL, nudge_sent_at = NULL
+       WHERE id = ? AND house_id = ?`,
+      [iso, userId, iso, taskId, houseId],
+    );
+    await this.addLog(houseId, userId, taskId, task.name, "done", null, completedAt);
+    return await this.getTask(houseId, taskId);
+  }
+
+  async deleteTask(houseId: number, taskId: number, userId: number): Promise<Task | null> {
+    const task = await this.getTask(houseId, taskId);
+    if (!task) {
+      return null;
+    }
+
+    // Righe storiche della v1 che puntano ancora all'attivita' (FK): vanno rimosse prima.
+    await this.db.run("DELETE FROM task_completions WHERE task_id = ?", [taskId]);
+    await this.db.run("DELETE FROM task_slots WHERE task_id = ?", [taskId]);
+    await this.db.run("DELETE FROM tasks WHERE id = ? AND house_id = ?", [taskId, houseId]);
+    await this.addLog(houseId, userId, task.id, task.name, "deleted", null, new Date(), task);
+    return task;
+  }
+
+  // ---- Registro ----
+
+  async listLog(houseId: number, limit = 30): Promise<LogEntry[]> {
+    const rows = await this.db.all(
+      `${logSelect} WHERE l.house_id = ? ORDER BY l.created_at DESC, l.id DESC LIMIT ?`,
+      [houseId, limit],
+    );
+    return rows.map(mapLogEntry);
+  }
+
+  /**
+   * Ricrea un'attivita' eliminata a partire da una voce del registro (aggiunta o eliminazione).
+   * Il ciclo riparte da adesso. Restituisce null se la voce non esiste o non e' ripristinabile.
+   */
+  async restoreTask(houseId: number, logId: number, userId: number, now: Date = new Date()): Promise<Task | null> {
+    const row = await this.db.first(`${logSelect} WHERE l.house_id = ? AND l.id = ?`, [houseId, logId]);
+    if (!row || Number(row.restorable) !== 1) {
+      return null;
+    }
+
+    const task = await this.createTask(
+      houseId,
+      userId,
+      String(row.task_name),
+      Number(row.task_interval_ms),
+      String(row.task_severity) as TaskSeverity,
+      now,
+      "ripristinata",
+    );
+    await this.db.run("UPDATE house_log SET restored_at = ? WHERE house_id = ? AND task_id = ?", [
+      now.toISOString(),
+      houseId,
+      Number(row.task_id),
+    ]);
+    return task;
+  }
+
+  private async addLog(
+    houseId: number,
+    userId: number | null,
+    taskId: number | null,
+    taskName: string,
+    kind: LogKind,
+    detail: string | null = null,
+    at: Date = new Date(),
+    snapshot: Pick<Task, "intervalMs" | "severity"> | null = null,
+  ): Promise<void> {
+    await this.db.run(
+      `INSERT INTO house_log (house_id, user_id, task_id, task_name, kind, detail, created_at, task_interval_ms, task_severity)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [houseId, userId, taskId, taskName, kind, detail, at.toISOString(), snapshot?.intervalMs ?? null, snapshot?.severity ?? null],
+    );
+  }
+
+  // ---- Scheduler ----
+
+  async listTasksWithHouses(): Promise<TaskWithHouse[]> {
+    const rows = await this.db.all(
+      `SELECT ${taskColumns},
+              h.id AS h_id, h.name AS h_name, h.chat_id AS h_chat_id, h.notify_changes AS h_notify_changes,
+              h.created_by AS h_created_by, h.created_at AS h_created_at, h.updated_at AS h_updated_at
+       FROM tasks t
+       JOIN houses h ON h.id = t.house_id
+       ${taskJoins}`,
+    );
+
+    return rows.map((row) => ({
+      ...mapTask(row),
+      house: {
+        id: Number(row.h_id),
+        name: String(row.h_name),
+        chatId: Number(row.h_chat_id),
+        notifyChanges: Number(row.h_notify_changes) === 1,
+        createdBy: row.h_created_by === null ? null : Number(row.h_created_by),
+        createdAt: String(row.h_created_at),
+        updatedAt: String(row.h_updated_at),
+      },
+    }));
+  }
+
+  async markNoticesHandled(taskId: number, stages: NoticeStageKey[], at: Date): Promise<void> {
+    const columns: Record<NoticeStageKey, string> = {
+      three_hours: "reminder_three_hours_sent_at",
+      thirty_minutes: "reminder_thirty_minutes_sent_at",
+      overdue: "overdue_notice_sent_at",
+      nudge: "nudge_sent_at",
+    };
+
+    if (stages.length === 0) {
+      return;
+    }
+
+    const iso = at.toISOString();
+    const assignments = stages.map((stage) => `${columns[stage]} = ?`).join(", ");
+    await this.db.run(`UPDATE tasks SET ${assignments} WHERE id = ?`, [...stages.map(() => iso), taskId]);
+  }
+
+  // ---- Login web ----
+
+  async createWebLoginRequest(expiresAt: Date): Promise<WebLoginRequest> {
+    const token = `${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "")}`;
+    await this.db.run(
+      "INSERT INTO web_login_requests (token, status, created_at, expires_at) VALUES (?, 'pending', ?, ?)",
+      [token, new Date().toISOString(), expiresAt.toISOString()],
+    );
+    return (await this.getWebLoginRequest(token)) as WebLoginRequest;
+  }
+
+  async getWebLoginRequest(token: string): Promise<WebLoginRequest | null> {
+    const row = await this.db.first("SELECT * FROM web_login_requests WHERE token = ?", [token]);
+    if (!row) {
+      return null;
+    }
+
+    const request = mapWebLoginRequest(row);
+    if ((request.status === "pending" || request.status === "approved") && new Date(request.expiresAt) <= new Date()) {
+      await this.db.run("UPDATE web_login_requests SET status = 'expired' WHERE token = ?", [token]);
+      return { ...request, status: "expired" };
+    }
+    return request;
+  }
+
+  async approveWebLoginRequest(token: string, identity: TelegramIdentity, approvedAt: Date): Promise<WebLoginRequest | null> {
+    const request = await this.getWebLoginRequest(token);
+    if (!request || request.status !== "pending") {
+      return request;
+    }
+
+    await this.db.run(
+      "UPDATE web_login_requests SET status = 'approved', telegram_id = ?, username = ?, display_name = ?, approved_at = ? WHERE token = ?",
+      [identity.telegramId, identity.username, identity.displayName, approvedAt.toISOString(), token],
+    );
+    return await this.getWebLoginRequest(token);
+  }
+
+  async claimWebLoginRequest(token: string, claimedAt: Date): Promise<WebLoginRequest | null> {
+    const result = await this.db.run(
+      "UPDATE web_login_requests SET status = 'claimed', claimed_at = ? WHERE token = ? AND status = 'approved'",
+      [claimedAt.toISOString(), token],
+    );
+    return result.changes > 0 ? await this.getWebLoginRequest(token) : null;
+  }
+
+  // ---- Sessioni web ----
+
+  async createWebSession(userId: number): Promise<string> {
+    const sessionId = `${crypto.randomUUID()}${crypto.randomUUID().replace(/-/g, "")}`;
+    const now = new Date();
+    await this.db.run(
+      "INSERT INTO web_sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+      [sessionId, userId, now.toISOString(), new Date(now.getTime() + sessionTtlMs).toISOString()],
+    );
+    return sessionId;
+  }
+
+  async getUserBySession(sessionId: string): Promise<AppUser | null> {
+    const row = await this.db.first(
+      `SELECT u.* FROM web_sessions s JOIN users u ON u.id = s.user_id WHERE s.id = ? AND s.expires_at > ? LIMIT 1`,
+      [sessionId, new Date().toISOString()],
+    );
+    return row ? mapUser(row) : null;
+  }
+
+  async destroyWebSession(sessionId: string): Promise<void> {
+    await this.db.run("DELETE FROM web_sessions WHERE id = ?", [sessionId]);
+  }
+
+  async pruneExpired(): Promise<void> {
+    const now = new Date().toISOString();
+    await this.db.run("DELETE FROM web_sessions WHERE expires_at <= ?", [now]);
+    await this.db.run(
+      "DELETE FROM web_login_requests WHERE expires_at <= ? OR (status = 'claimed' AND claimed_at <= ?)",
+      [now, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()],
+    );
+  }
+}
+
+export const sessionTtlSeconds = sessionTtlMs / 1000;
+
+function mapUser(row: SqlRow): AppUser {
+  return {
+    id: Number(row.id),
+    telegramId: Number(row.telegram_id),
+    username: row.username ? String(row.username) : null,
+    displayName: String(row.display_name),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function mapHouse(row: SqlRow): House {
+  return {
+    id: Number(row.id),
+    name: String(row.name),
+    chatId: Number(row.chat_id),
+    notifyChanges: Number(row.notify_changes) === 1,
+    createdBy: row.created_by === null || row.created_by === undefined ? null : Number(row.created_by),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function mapTask(row: SqlRow): Task {
+  return {
+    id: Number(row.id),
+    houseId: row.house_id === null || row.house_id === undefined ? null : Number(row.house_id),
+    createdBy: Number(row.owner_id),
+    name: String(row.name),
+    intervalMs: Number(row.interval_ms),
+    severity: String(row.severity) as TaskSeverity,
+    cycleAnchorAt: String(row.cycle_anchor_at),
+    reminderThreeHoursSentAt: nullableString(row.reminder_three_hours_sent_at),
+    reminderThirtyMinutesSentAt: nullableString(row.reminder_thirty_minutes_sent_at),
+    overdueNoticeSentAt: nullableString(row.overdue_notice_sent_at),
+    nudgeSentAt: nullableString(row.nudge_sent_at),
+    lastCompletedBy: row.last_completed_by === null || row.last_completed_by === undefined ? null : Number(row.last_completed_by),
+    lastCompletedByName: nullableString(row.last_completed_by_name),
+    completedCount: Number(row.completed_count ?? 0),
+    assignMode: (row.assign_mode ? String(row.assign_mode) : "anyone") as AssignMode,
+    assignUserIds: parseIdList(row.assign_users),
+    assignTurn: Number(row.assign_turn ?? 0),
+    assigneeId: row.assignee_id === null || row.assignee_id === undefined ? null : Number(row.assignee_id),
+    assigneeName: nullableString(row.assignee_name),
+    slotStartsAt: nullableString(row.slot_starts_at),
+    slotDueAt: nullableString(row.slot_due_at),
+    createdAt: String(row.created_at),
+    updatedAt: String(row.updated_at),
+  };
+}
+
+function mapLogEntry(row: SqlRow): LogEntry {
+  return {
+    id: Number(row.id),
+    houseId: Number(row.house_id),
+    userId: row.user_id === null || row.user_id === undefined ? null : Number(row.user_id),
+    userName: String(row.user_name),
+    taskId: row.task_id === null || row.task_id === undefined ? null : Number(row.task_id),
+    taskName: String(row.task_name),
+    kind: String(row.kind) as LogKind,
+    detail: nullableString(row.detail),
+    restorable: Number(row.restorable ?? 0) === 1,
+    createdAt: String(row.created_at),
+  };
+}
+
+function mapWebLoginRequest(row: SqlRow): WebLoginRequest {
+  return {
+    token: String(row.token),
+    status: String(row.status) as WebLoginRequest["status"],
+    telegramId: row.telegram_id === null || row.telegram_id === undefined ? null : Number(row.telegram_id),
+    username: nullableString(row.username),
+    displayName: nullableString(row.display_name),
+    approvedAt: nullableString(row.approved_at),
+    claimedAt: nullableString(row.claimed_at),
+    createdAt: String(row.created_at),
+    expiresAt: String(row.expires_at),
+  };
+}
+
+function parseIdList(value: unknown): number[] {
+  if (typeof value !== "string" || !value) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(Number).filter((id) => Number.isSafeInteger(id)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function nullableString(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
+
+export type { SqlParam };
