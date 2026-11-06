@@ -61,8 +61,11 @@ const PAGE_TEMPLATE = `<!doctype html>
   .who.me { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 
   /* ---- Timeline scadenze ---- */
-  .contrib { display: block; margin-top: 28px; padding: 12px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; text-decoration: none; text-align: center; }
-  .contrib strong { color: var(--accent); font-weight: 600; }
+  .head { align-items: flex-start; flex-wrap: nowrap; }
+  .head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; margin-top: 10px; }
+  .head-side select { max-width: 150px; }
+  .contrib { font-size: .78rem; color: var(--muted); text-decoration: none; padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--card); white-space: nowrap; }
+  .contrib:hover { color: var(--accent); border-color: var(--accent); }
   .tl { padding: 14px 14px 10px; }
   .tl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   .tl-title { font-weight: 700; font-size: 1rem; }
@@ -605,8 +608,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       ),
       h("div", { class: "row", style: "margin-top:16px" },
         h("button", { onclick: function () { api("POST", "/logout").then(function () { state.me = null; renderLogin(); }); } }, "Esci")
-      ),
-      h("a", { class: "contrib", href: "/contribuisci" }, "🛠 Hai un'idea per il bot? ", h("strong", {}, "Miglioralo tu →"))
+      )
     );
   }
 
@@ -624,7 +626,9 @@ const PAGE_TEMPLATE = `<!doctype html>
     }
     if (!state.data) { root.replaceChildren(h("p", { class: "muted" }, "Caricamento...")); return; }
 
-    var header = h("div", { class: "row" }, h("div", { class: "grow" }, h("h1", {}, state.data.house.name), h("div", { class: "muted" }, state.me.user.displayName)));
+    var side = h("div", { class: "head-side" },
+      h("a", { class: "contrib", href: "/contribuisci", title: "Hai un'idea per il bot? Miglioralo tu" }, "🛠 Migliora"));
+    var header = h("div", { class: "row head" }, h("div", { class: "grow" }, h("h1", {}, state.data.house.name), h("div", { class: "muted" }, state.me.user.displayName)), side);
     if (state.me.houses.length > 1) {
       var select = h("select", { onchange: function (e) {
         state.houseId = Number(e.target.value); state.data = null; state.editing = null; state.adding = false;
@@ -632,7 +636,7 @@ const PAGE_TEMPLATE = `<!doctype html>
         loadHouse();
       } });
       state.me.houses.forEach(function (x) { var o = h("option", { value: String(x.id) }, x.name); if (x.id === state.houseId) o.selected = true; select.appendChild(o); });
-      header.appendChild(select);
+      side.appendChild(select);
     }
 
     var tabs = h("nav", {});
