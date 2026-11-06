@@ -18,6 +18,10 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   e un periodo (un giorno specifico, entro una settimana, entro un mese). Il turno aperto con la scadenza piu' vicina
   decide a chi tocca e quando scade; finiti i turni l'attivita' torna a chiunque con la frequenza normale.
   Promemoria ed elenco nel gruppo mostrano a chi tocca. Si imposta dal portale.
+- **Promemoria giornalieri.** ☀️ *Buongiorno* (cosa e' in ritardo e cosa scade oggi, predefinito alle 9:00, attivo)
+  e 🌙 *Riepilogo serale* (cosa e' stato fatto oggi, cosa e' in ritardo e cosa scade nelle prossime 24 ore, predefinito
+  alle 21:00, spento). Dalla scheda Casa del portale si accendono, si sceglie l'ora e si personalizza la frase iniziale:
+  l'elenco sotto e' sempre automatico. Partono una volta al giorno e, se non c'e' niente da segnalare, di default non partono.
 - **Registro.** Ogni attivita' fatta, creata, modificata o eliminata finisce nel log (`/log` o portale).
 - **Avvisi sulle modifiche.** Quando si crea o modifica un'attivita' il bot puo' avvisare il gruppo
   (es. `✏️ Luca · Lavare il bagno` / `frequenza 1×/sett → 2×/sett`). I messaggi del bot sono volutamente brevi.
@@ -80,7 +84,7 @@ I secret del Worker (`BOT_TOKEN`, `WEBHOOK_SECRET`) restano su Cloudflare e non 
 ## Deploy Cloudflare manuale (Workers + D1)
 
 ```bash
-npm run cf:d1:migrate   # applica le migrazioni nuove (0020 case, 0021 ripristino, 0022 assegnazione)
+npm run cf:d1:migrate   # applica le migrazioni nuove
 npm run cf:deploy
 ```
 

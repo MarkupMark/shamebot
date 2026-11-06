@@ -1,5 +1,7 @@
 import type {
   AppUser,
+  DigestKind,
+  DigestSettings,
   AssignMode,
   SlotKind,
   TaskSlot,
@@ -43,6 +45,13 @@ export type TaskUpdateInput = {
   severity?: TaskSeverity;
   assignment?: AssignmentInput;
 };
+
+export const digestDefaults: Record<DigestKind, Omit<DigestSettings, "kind" | "lastSentDate">> = {
+  morning: { enabled: true, time: "09:00", intro: null, skipIfEmpty: true },
+  evening: { enabled: false, time: "21:00", intro: null, skipIfEmpty: true },
+};
+
+export type DigestUpdate = Partial<Pick<DigestSettings, "enabled" | "time" | "intro" | "skipIfEmpty">>;
 
 export type HouseSetup = {
   house: House;
@@ -179,6 +188,75 @@ export class HouseStore {
       [userId],
     );
     return rows.map(mapHouse);
+  }
+
+  async listHouses(): Promise<House[]> {
+    const rows = await this.db.all("SELECT * FROM houses ORDER BY id");
+    return rows.map(mapHouse);
+  }
+
+  // ---- Promemoria giornalieri ----
+
+  /** Impostazioni di buongiorno e serale, con i valori predefiniti dove la casa non ha scelto. */
+  async getDigests(houseId: number): Promise<Record<DigestKind, DigestSettings>> {
+    const rows = await this.db.all("SELECT * FROM house_digests WHERE house_id = ?", [houseId]);
+    const result = {} as Record<DigestKind, DigestSettings>;
+    for (const kind of ["morning", "evening"] as const) {
+      const row = rows.find((r) => r.kind === kind);
+      result[kind] = row
+        ? {
+            kind,
+            enabled: Number(row.enabled) === 1,
+            time: String(row.send_time),
+            intro: nullableString(row.intro),
+            skipIfEmpty: Number(row.skip_if_empty) === 1,
+            lastSentDate: nullableString(row.last_sent_date),
+          }
+        : { kind, ...digestDefaults[kind], lastSentDate: null };
+    }
+    return result;
+  }
+
+  async updateDigest(houseId: number, kind: DigestKind, update: DigestUpdate): Promise<DigestSettings> {
+    const current = (await this.getDigests(houseId))[kind];
+    const next = { ...current, ...update };
+    await this.upsertDigest(houseId, next);
+    return next;
+  }
+
+  /** Segna il giorno locale come gestito (inviato o saltato perche' vuoto/in ritardo). */
+  async markDigestHandled(houseId: number, kind: DigestKind, localDate: string): Promise<void> {
+    const current = (await this.getDigests(houseId))[kind];
+    await this.upsertDigest(houseId, { ...current, lastSentDate: localDate });
+  }
+
+  private async upsertDigest(houseId: number, settings: DigestSettings): Promise<void> {
+    await this.db.run(
+      `INSERT INTO house_digests (house_id, kind, enabled, send_time, intro, skip_if_empty, last_sent_date, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (house_id, kind) DO UPDATE SET
+         enabled = excluded.enabled, send_time = excluded.send_time, intro = excluded.intro,
+         skip_if_empty = excluded.skip_if_empty, last_sent_date = excluded.last_sent_date, updated_at = excluded.updated_at`,
+      [
+        houseId,
+        settings.kind,
+        settings.enabled ? 1 : 0,
+        settings.time,
+        settings.intro,
+        settings.skipIfEmpty ? 1 : 0,
+        settings.lastSentDate,
+        new Date().toISOString(),
+      ],
+    );
+  }
+
+  /** Attivita' segnate come fatte dal momento indicato in poi (per il riepilogo serale). */
+  async listDoneSince(houseId: number, since: Date): Promise<LogEntry[]> {
+    const rows = await this.db.all(
+      `${logSelect} WHERE l.house_id = ? AND l.kind = 'done' AND l.created_at >= ? ORDER BY l.created_at, l.id`,
+      [houseId, since.toISOString()],
+    );
+    return rows.map(mapLogEntry);
   }
 
   async setHouseNotifyChanges(houseId: number, notifyChanges: boolean): Promise<void> {

@@ -38,6 +38,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   .grow { flex: 1; min-width: 0; }
   button, select, input[type=text], input[type=number] { font: inherit; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 9px 12px; }
   button { cursor: pointer; }
+  button:disabled { opacity: .45; cursor: default; }
   button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
   button.danger { color: var(--late); }
   button.ghost { background: transparent; }
@@ -61,6 +62,18 @@ const PAGE_TEMPLATE = `<!doctype html>
   .who.me { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 
   /* ---- Timeline scadenze ---- */
+  .digest-top { display: flex; align-items: center; gap: 10px; }
+  .digest-top .title { flex: 1; font-weight: 600; }
+  .digest-top input[type=time] { font: inherit; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 6px 8px; }
+  .digest.off .digest-body { opacity: .5; }
+  .switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 99px; transition: background .2s; cursor: pointer; }
+  .switch span:before { content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .2s; box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span:before { transform: translateX(18px); }
+  .bubble { background: var(--bg); border: 1px solid var(--line); border-radius: 12px 12px 12px 4px; padding: 10px 12px; white-space: pre-wrap; font-size: .88rem; line-height: 1.45; margin-top: 6px; }
+  .bubble-label { font-size: .75rem; color: var(--muted); margin-top: 10px; }
   .head { align-items: flex-start; flex-wrap: nowrap; }
   .head-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex-shrink: 0; margin-top: 10px; }
   .head-side select { max-width: 150px; }
@@ -122,7 +135,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   var savedRange = null;
   try { savedRange = localStorage.getItem("tlRange"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", tlExpanded: false };
+    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", tlExpanded: false, digestDraft: {} };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -589,6 +602,71 @@ const PAGE_TEMPLATE = `<!doctype html>
     return h("div", { class: "card" }, list);
   }
 
+  // ---------- Promemoria giornalieri ----------
+  var DIGEST_TITLES = { morning: "☀️ Buongiorno", evening: "🌙 Riepilogo serale" };
+  var DIGEST_HINTS = {
+    morning: "Cosa e' in ritardo e cosa scade oggi.",
+    evening: "Cosa e' stato fatto oggi, cosa e' in ritardo e cosa scade nelle prossime 24 ore."
+  };
+  var NL2 = String.fromCharCode(10) + String.fromCharCode(10);
+
+  function digestCard(d) {
+    var draft = state.digestDraft[d.kind];
+    if (!draft) {
+      draft = { enabled: d.enabled, time: d.time, intro: d.intro || "", skipIfEmpty: d.skipIfEmpty, dirty: false };
+      state.digestDraft[d.kind] = draft;
+    }
+    var bodyText = d.preview.indexOf(NL2) >= 0 ? d.preview.slice(d.preview.indexOf(NL2)) : "";
+    var bubble = h("div", { class: "bubble" });
+    var note = h("div", { class: "muted", style: "font-size:.8rem;margin-top:4px" });
+    var save = h("button", { class: "primary", onclick: function () {
+      var payload = { digests: {} };
+      payload.digests[d.kind] = { enabled: draft.enabled, time: draft.time, intro: draft.intro, skipIfEmpty: draft.skipIfEmpty };
+      api("PATCH", "/api/houses/" + state.houseId, payload).then(function (data) {
+        delete state.digestDraft[d.kind];
+        state.data = data; state.error = ""; render();
+      }).catch(fail);
+    } }, "Salva");
+
+    function refresh() {
+      bubble.textContent = (draft.intro.trim() || d.defaultIntro) + bodyText;
+      note.textContent = d.previewEmpty && draft.skipIfEmpty ? "Con la situazione di adesso non partirebbe: niente da segnalare." : "";
+      save.disabled = !draft.dirty;
+      card.className = "card digest" + (draft.enabled ? "" : " off");
+    }
+    function change() { draft.dirty = true; refresh(); }
+
+    var toggle = h("input", { type: "checkbox", onchange: function (e) { draft.enabled = e.target.checked; change(); } });
+    toggle.checked = draft.enabled;
+    var time = h("input", { type: "time", value: draft.time, onchange: function (e) { if (e.target.value) { draft.time = e.target.value; change(); } } });
+    var intro = h("input", { type: "text", maxlength: "200", placeholder: d.defaultIntro, value: draft.intro, oninput: function (e) { draft.intro = e.target.value; change(); } });
+    var skip = h("input", { type: "checkbox", onchange: function (e) { draft.skipIfEmpty = e.target.checked; change(); } });
+    skip.checked = draft.skipIfEmpty;
+
+    var card = h("div", { class: "card digest" },
+      h("div", { class: "digest-top" },
+        h("label", { class: "switch" }, toggle, h("span", {})),
+        h("div", { class: "title" }, DIGEST_TITLES[d.kind]),
+        time
+      ),
+      h("div", { class: "digest-body" },
+        h("p", { class: "muted", style: "margin:6px 0 10px" }, DIGEST_HINTS[d.kind]),
+        h("div", { class: "muted", style: "font-size:.8rem;margin-bottom:4px" }, "Frase iniziale (l'elenco sotto e' automatico)"),
+        intro,
+        h("label", { class: "check", style: "margin-top:8px" }, skip, "Non inviare se non c'e' niente da segnalare"),
+        h("div", { class: "bubble-label" }, "Anteprima, se partisse adesso"),
+        bubble,
+        note
+      ),
+      h("div", { class: "row", style: "margin-top:10px" },
+        save,
+        h("button", { class: "ghost", onclick: function () { draft.intro = ""; intro.value = ""; change(); } }, "Testo predefinito")
+      )
+    );
+    refresh();
+    return card;
+  }
+
   function viewHouse() {
     var members = h("ul", { class: "plain" });
     state.data.members.forEach(function (m) {
@@ -601,6 +679,8 @@ const PAGE_TEMPLATE = `<!doctype html>
     return h("div", {},
       h("h2", {}, "Coinquilini"),
       h("div", { class: "card" }, members),
+      h("h2", {}, "Promemoria nel gruppo"),
+      state.data.digests.map(digestCard),
       h("h2", {}, "Avvisi"),
       h("div", { class: "card" },
         h("label", { class: "check" }, notify, "Avvisa il gruppo quando un'attivita' viene creata o modificata"),
@@ -631,7 +711,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     var header = h("div", { class: "row head" }, h("div", { class: "grow" }, h("h1", {}, state.data.house.name), h("div", { class: "muted" }, state.me.user.displayName)), side);
     if (state.me.houses.length > 1) {
       var select = h("select", { onchange: function (e) {
-        state.houseId = Number(e.target.value); state.data = null; state.editing = null; state.adding = false;
+        state.houseId = Number(e.target.value); state.data = null; state.editing = null; state.adding = false; state.digestDraft = {};
         try { localStorage.setItem("house", String(state.houseId)); } catch (err) {}
         loadHouse();
       } });
@@ -649,7 +729,10 @@ const PAGE_TEMPLATE = `<!doctype html>
     root.replaceChildren.apply(root, parts);
   }
 
-  setInterval(function () { if (state.data && !state.editing && !state.adding) render(); }, 60000);
+  setInterval(function () {
+    var typing = document.activeElement && root.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+    if (state.data && !state.editing && !state.adding && !typing) render();
+  }, 60000);
   boot();
 })();
 </script>

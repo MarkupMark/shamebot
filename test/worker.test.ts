@@ -140,3 +140,25 @@ describe("Pagina /contribuisci", () => {
     expect(json).toContain("AGENTS.md");
   });
 });
+
+describe("Promemoria dal portale", () => {
+  it("restituisce le impostazioni con anteprima e le salva validandole", async () => {
+    const { lucaSession, house, call } = await setup();
+    const initial = await call(lucaSession, "GET", `/api/houses/${house.id}`);
+    expect(initial.json.digests.map((d: { kind: string; enabled: boolean; time: string }) => [d.kind, d.enabled, d.time])).toEqual([
+      ["morning", true, "09:00"],
+      ["evening", false, "21:00"],
+    ]);
+    expect(initial.json.digests[0].preview).toContain("Buongiorno");
+
+    const saved = await call(lucaSession, "PATCH", `/api/houses/${house.id}`, {
+      digests: { evening: { enabled: true, time: "22:15", intro: "  Notte!  " } },
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.json.digests[1]).toMatchObject({ enabled: true, time: "22:15", intro: "Notte!" });
+    expect(saved.json.digests[1].preview.startsWith("Notte!")).toBe(true);
+
+    expect((await call(lucaSession, "PATCH", `/api/houses/${house.id}`, { digests: { evening: { time: "25:00" } } })).status).toBe(400);
+    expect((await call(lucaSession, "PATCH", `/api/houses/${house.id}`, { digests: { pranzo: { enabled: true } } })).status).toBe(400);
+  });
+});

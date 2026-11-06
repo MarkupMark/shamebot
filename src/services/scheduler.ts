@@ -1,6 +1,7 @@
 import type { HouseStore } from "./store.js";
 import { getDueNotice } from "./policy.js";
 import { noticeMessage, safeSend, type SendToChat } from "./notify.js";
+import { runDigests } from "./digest.js";
 
 /**
  * Controlla tutte le attivita' e scrive nel gruppo della casa i promemoria e i solleciti dovuti.
@@ -35,6 +36,7 @@ export class IntervalScheduler {
     private readonly store: HouseStore,
     private readonly send: SendToChat,
     private readonly intervalMs: number,
+    private readonly timezone: string = "Europe/Rome",
   ) {}
 
   start(): void {
@@ -48,7 +50,9 @@ export class IntervalScheduler {
       }
       this.running = true;
       try {
-        await runDueChecks(this.store, this.send);
+        const now = new Date();
+        await runDueChecks(this.store, this.send, now);
+        await runDigests(this.store, this.send, now, this.timezone);
       } catch (error) {
         console.error("Scheduler fallito:", error);
       } finally {

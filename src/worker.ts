@@ -1,11 +1,14 @@
 import { webhookCallback } from "grammy";
-import { assignModeValues, slotKindValues } from "./types/domain.js";
+import { assignModeValues, digestKindValues, slotKindValues } from "./types/domain.js";
+import type { DigestKind } from "./types/domain.js";
+import type { DigestUpdate } from "./services/store.js";
 import type { AppUser, AssignMode, House, SlotKind, Task, TaskSeverity, TaskSlot } from "./types/domain.js";
 import type { AssignmentInput } from "./services/store.js";
 import { createBotApp, registerBotCommands } from "./bot/handlers.js";
 import { createD1Db } from "./services/db.js";
 import { HouseStore, sessionTtlSeconds } from "./services/store.js";
 import { runDueChecks } from "./services/scheduler.js";
+import { composeDigest, defaultDigestIntro, runDigests } from "./services/digest.js";
 import { getDueAt } from "./services/policy.js";
 import { verifyTelegramMiniAppInitData } from "./services/web-auth.js";
 import { renderAppPage } from "./web/page.js";
@@ -114,7 +117,9 @@ export default {
     }
 
     const { store, send } = createRuntime(env, env.SITE_URL?.trim() || "");
-    ctx.waitUntil(runDueChecks(store, send, new Date()));
+    const now = new Date();
+    ctx.waitUntil(runDueChecks(store, send, now));
+    ctx.waitUntil(runDigests(store, send, now, timezoneOf(env)));
     ctx.waitUntil(store.pruneExpired());
   },
 };
@@ -244,7 +249,7 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
 
   if (rest === "") {
     if (method === "GET") {
-      return jsonResponse(await buildHousePayload(store, house, user));
+      return jsonResponse(await buildHousePayload(store, house, user, timezoneOf(env)));
     }
 
     if (method === "PATCH") {
@@ -252,7 +257,12 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       if (typeof body.notifyChanges === "boolean") {
         await store.setHouseNotifyChanges(house.id, body.notifyChanges);
       }
-      return jsonResponse(await buildHousePayload(store, (await store.getHouse(house.id)) as House, user));
+      if (body.digests !== undefined) {
+        for (const [kind, update] of parseDigestUpdates(body.digests)) {
+          await store.updateDigest(house.id, kind, update);
+        }
+      }
+      return jsonResponse(await buildHousePayload(store, (await store.getHouse(house.id)) as House, user, timezoneOf(env)));
     }
 
     return methodNotAllowed(["GET", "PATCH"]);
@@ -330,13 +340,36 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
   return new Response("Not found", { status: 404 });
 }
 
-async function buildHousePayload(store: HouseStore, house: House, viewer: AppUser) {
-  const [tasks, members, log, slots] = await Promise.all([
+function timezoneOf(env: WorkerEnv): string {
+  return env.DEFAULT_TIMEZONE?.trim() || "Europe/Rome";
+}
+
+async function buildHousePayload(store: HouseStore, house: House, viewer: AppUser, timezone: string) {
+  const now = new Date();
+  const [tasks, members, log, slots, digests] = await Promise.all([
     store.listTasks(house.id),
     store.listMembers(house.id),
     store.listLog(house.id, 50),
     store.listOpenSlots(house.id),
+    store.getDigests(house.id),
   ]);
+
+  const digestViews = await Promise.all(
+    digestKindValues.map(async (kind) => {
+      const settings = digests[kind];
+      const preview = await composeDigest(store, house, kind, settings, now, timezone);
+      return {
+        kind,
+        enabled: settings.enabled,
+        time: settings.time,
+        intro: settings.intro,
+        defaultIntro: defaultDigestIntro[kind],
+        skipIfEmpty: settings.skipIfEmpty,
+        preview: preview.text,
+        previewEmpty: preview.empty,
+      };
+    }),
+  );
 
   return {
     house: { id: house.id, name: house.name, notifyChanges: house.notifyChanges },
@@ -345,6 +378,8 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
     tasks: sortTasksByDueDate(tasks).map((task) => mapTaskView(task, slots.filter((slot) => slot.taskId === task.id))),
     members: members.map((member) => ({ id: member.userId, displayName: member.displayName, username: member.username })),
     log,
+    digests: digestViews,
+    timezone,
   };
 }
 
@@ -469,6 +504,49 @@ async function parseAssignment(store: HouseStore, houseId: number, raw: unknown)
     return { userId: slot.userId, kind, startsAt: startsAt.toISOString(), dueAt: dueAt.toISOString() };
   });
   return { mode, slots };
+}
+
+const maxDigestIntroLength = 200;
+
+/** Valida { morning?: {...}, evening?: {...} } inviato dal portale. */
+function parseDigestUpdates(raw: unknown): Array<[DigestKind, DigestUpdate]> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new HttpError(400, "Impostazioni promemoria non valide.");
+  }
+
+  const updates: Array<[DigestKind, DigestUpdate]> = [];
+  for (const [kind, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!digestKindValues.includes(kind as DigestKind) || !value || typeof value !== "object") {
+      throw new HttpError(400, "Impostazioni promemoria non valide.");
+    }
+    const body = value as Record<string, unknown>;
+    const update: DigestUpdate = {};
+
+    if (body.enabled !== undefined) {
+      if (typeof body.enabled !== "boolean") throw new HttpError(400, "Valore non valido per l'attivazione.");
+      update.enabled = body.enabled;
+    }
+    if (body.skipIfEmpty !== undefined) {
+      if (typeof body.skipIfEmpty !== "boolean") throw new HttpError(400, "Valore non valido.");
+      update.skipIfEmpty = body.skipIfEmpty;
+    }
+    if (body.time !== undefined) {
+      if (typeof body.time !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.time)) {
+        throw new HttpError(400, "Orario non valido (formato HH:MM).");
+      }
+      update.time = body.time;
+    }
+    if (body.intro !== undefined) {
+      if (body.intro !== null && typeof body.intro !== "string") throw new HttpError(400, "Testo non valido.");
+      const intro = typeof body.intro === "string" ? body.intro.trim() : "";
+      if (intro.length > maxDigestIntroLength) {
+        throw new HttpError(400, `Il testo puo' avere al massimo ${maxDigestIntroLength} caratteri.`);
+      }
+      update.intro = intro || null;
+    }
+    updates.push([kind as DigestKind, update]);
+  }
+  return updates;
 }
 
 function notifyOption(body: Record<string, unknown>): { notify?: boolean } {

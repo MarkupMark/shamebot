@@ -17,7 +17,7 @@ async function main(): Promise<void> {
     siteUrl: appConfig.siteUrl,
     timezone: appConfig.defaultTimezone,
   });
-  const scheduler = new IntervalScheduler(store, send, appConfig.schedulerIntervalMs);
+  const scheduler = new IntervalScheduler(store, send, appConfig.schedulerIntervalMs, appConfig.defaultTimezone);
 
   const shutdown = () => {
     scheduler.stop();

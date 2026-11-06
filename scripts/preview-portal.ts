@@ -10,6 +10,16 @@ import { renderAppPage } from "../src/web/page.js";
 import { renderContributePage } from "../src/web/contribute.js";
 
 const port = Number(process.env.PORT ?? 8790);
+
+// Impostazioni dei promemoria: le modifiche dal portale restano in memoria finche' il server gira.
+const digests: Record<string, { enabled: boolean; time: string; intro: string | null; skipIfEmpty: boolean }> = {
+  morning: { enabled: true, time: "09:00", intro: null, skipIfEmpty: true },
+  evening: { enabled: false, time: "21:00", intro: null, skipIfEmpty: true },
+};
+const digestText = {
+  morning: { intro: "☀️ Buongiorno! Ecco cosa c'è da fare oggi", body: "In ritardo\n• Buttare l'umido · da 5h · 👤 Tu\n\nOggi\n• Lavatrice · entro le 21:00 · 👤 Anna" },
+  evening: { intro: "🌙 Riepilogo della giornata", body: "Fatto oggi\n✅ Lavatrice · Anna\n\nAncora in ritardo\n• Buttare l'umido · da 5h · 👤 Tu\n\nProssime 24 ore\n• Lavatrice · domani entro le 19:00 · 👤 Anna" },
+};
 const H = 3_600_000;
 const D = 24 * H;
 
@@ -30,6 +40,14 @@ function buildData() {
       { id: 2, displayName: "Anna", username: null },
       { id: 3, displayName: "Marco", username: null },
     ],
+    digests: (["morning", "evening"] as const).map((kind) => ({
+      kind,
+      ...digests[kind],
+      defaultIntro: digestText[kind].intro,
+      preview: `${digests[kind].intro || digestText[kind].intro}\n\n${digestText[kind].body}`,
+      previewEmpty: false,
+    })),
+    timezone: "Europe/Rome",
     log: [
       { id: 1, houseId: 1, userId: 2, userName: "Anna", taskId: 2, taskName: "Lavatrice", kind: "done", detail: null, restorable: false, createdAt: iso(-3 * H) },
       { id: 2, houseId: 1, userId: 3, userName: "Marco", taskId: 4, taskName: "Pulire il bagno", kind: "updated", detail: "assegnazione chiunque → personalizzata (2 turni)", restorable: false, createdAt: iso(-D) },
@@ -76,6 +94,13 @@ createServer((req, res) => {
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       if (req.method !== "GET") console.log(`[anteprima] ${req.method} ${url} ${body}`);
+      if (req.method === "PATCH" && url === "/api/houses/1") {
+        const parsed = JSON.parse(body || "{}") as { digests?: Record<string, Partial<(typeof digests)[string]>> };
+        for (const [kind, update] of Object.entries(parsed.digests ?? {})) {
+          if (digests[kind]) digests[kind] = { ...digests[kind], ...update, intro: update.intro?.trim() || null };
+        }
+        return res.end(JSON.stringify(buildData()));
+      }
       res.end(JSON.stringify(req.method === "GET" ? buildData() : { ok: true }));
     });
     return;

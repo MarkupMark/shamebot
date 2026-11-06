@@ -22,6 +22,21 @@ export type TaskSlot = {
   dueAt: string;
 };
 
+export const digestKindValues = ["morning", "evening"] as const;
+/** morning = "buongiorno", evening = "riepilogo serale". */
+export type DigestKind = (typeof digestKindValues)[number];
+
+export type DigestSettings = {
+  kind: DigestKind;
+  enabled: boolean;
+  /** Ora locale "HH:MM" (fuso della casa, default Europe/Rome). */
+  time: string;
+  /** Frase iniziale personalizzata; null = testo predefinito. */
+  intro: string | null;
+  skipIfEmpty: boolean;
+  lastSentDate: string | null;
+};
+
 export type LogKind = "done" | "created" | "updated" | "deleted";
 
 export type AppUser = {
