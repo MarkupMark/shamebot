@@ -649,6 +649,7 @@ export class HouseStore {
 
     // Righe storiche della v1 che puntano ancora all'attivita' (FK): vanno rimosse prima.
     await this.db.run("DELETE FROM task_completions WHERE task_id = ?", [taskId]);
+    await this.db.run("DELETE FROM bonus_usages WHERE task_id = ?", [taskId]);
     await this.db.run("DELETE FROM task_slots WHERE task_id = ?", [taskId]);
     await this.db.run("DELETE FROM tasks WHERE id = ? AND house_id = ?", [taskId, houseId]);
     await this.addLog(houseId, userId, task.id, task.name, "deleted", null, new Date(), task);

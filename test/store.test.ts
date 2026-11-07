@@ -83,6 +83,20 @@ describe("HouseStore", () => {
     expect(await store.deleteTask(b.house.id, task.id, luca.id)).toBeNull();
   });
 
+  it("elimina anche un'attivita' con righe della vecchia versione (bonus_usages)", async () => {
+    const { store, db, luca } = await setup();
+    const { house } = await store.getOrCreateHouse(-100, "Casa", luca.id);
+    const task = await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium");
+    const now = new Date().toISOString();
+    await db.run(
+      "INSERT INTO bonus_usages (owner_id, task_id, hours, extension_ms, used_at, created_at) VALUES (?, ?, 2, 7200000, ?, ?)",
+      [luca.id, task.id, now, now],
+    );
+
+    expect((await store.deleteTask(house.id, task.id, luca.id))?.name).toBe("Bagno");
+    expect(await store.listTasks(house.id)).toEqual([]);
+  });
+
   it("elimina l'attivita' ma ne conserva la traccia nel registro", async () => {
     const { store, luca } = await setup();
     const { house } = await store.getOrCreateHouse(-100, "Casa", luca.id);
