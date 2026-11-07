@@ -55,6 +55,13 @@ const PAGE_TEMPLATE = `<!doctype html>
   .badge.out { border-color: var(--warn); color: var(--warn); }
   nav button.active { background: var(--accent); color: var(--accent-text); border-color: transparent; }
   .task-name { font-weight: 600; }
+  .card.task { padding: 10px 12px; margin: 8px 0; }
+  .row.tight { gap: 6px; flex-wrap: nowrap; }
+  .task-meta { margin-top: 1px; font-size: .85rem; }
+  .task-foot { margin-top: 8px; }
+  .task-foot .grow { font-size: .9rem; }
+  .task-foot button { padding: 5px 12px; }
+  .task-foot button.icon { padding: 5px 8px; }
   .due-ok { color: var(--ok); } .due-soon { color: var(--warn); } .due-late { color: var(--late); font-weight: 600; }
   .tag { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
   .tag.high { color: var(--late); border-color: var(--late); }
@@ -598,25 +605,23 @@ const PAGE_TEMPLATE = `<!doctype html>
       var notify = state.data.house.notifyChanges ? "1" : "0";
       api("DELETE", "/api/houses/" + state.houseId + "/tasks/" + task.id + "?notify=" + notify).then(loadHouse).catch(fail);
     }
-    return h("div", { class: "card" },
-      h("div", { class: "row" },
-        h("div", { class: "grow" },
-          h("div", { class: "task-name" }, task.name),
-          h("div", { class: "muted" }, task.frequency)
-        ),
+    var extra = [task.frequency];
+    if (task.assignMode === "alternate") extra.push("a turno");
+    if (task.assignMode === "custom" && task.slots.length > 1) extra.push("poi " + task.slots[1].userName);
+    return h("div", { class: "card task" },
+      h("div", { class: "row tight" },
+        h("div", { class: "grow task-name" }, task.name),
         h("span", { class: "tag " + task.severity }, SEVERITY[task.severity])
       ),
-      h("div", { class: "row", style: "margin-top:6px" },
+      h("div", { class: "muted task-meta" },
         h("span", { class: "who" + (task.assigneeId === state.data.viewerId ? " me" : "") }, "👤 " + whoLabel(task)),
-        task.assignMode === "alternate" ? h("span", { class: "muted", style: "font-size:.8rem" }, "a turno") : null,
-        task.assignMode === "custom" && task.slots.length > 1 ? h("span", { class: "muted", style: "font-size:.8rem" }, "poi " + task.slots[1].userName) : null
+        " · " + extra.join(" · ")
       ),
-      h("div", { class: due.cls, style: "margin:6px 0" }, due.text),
-      task.lastCompletedByName ? h("div", { class: "muted" }, "Ultima volta: " + task.lastCompletedByName) : null,
-      h("div", { class: "row", style: "margin-top:10px" },
+      h("div", { class: "row tight task-foot" },
+        h("div", { class: "grow " + due.cls }, due.text),
         h("button", { class: "primary", onclick: done }, "Fatto"),
-        h("button", { onclick: function () { state.editing = task.id; state.adding = false; render(); } }, "Modifica"),
-        h("button", { class: "danger ghost", onclick: remove }, "Elimina")
+        h("button", { class: "icon", title: "Modifica", "aria-label": "Modifica", onclick: function () { state.editing = task.id; state.adding = false; render(); } }, "✏️"),
+        h("button", { class: "icon danger ghost", title: "Elimina", "aria-label": "Elimina", onclick: remove }, "🗑")
       )
     );
   }
