@@ -13,12 +13,14 @@ describe("duration", () => {
     expect(parseDurationInput("1 volta a settimana")).toBe(7 * day);
     expect(parseDurationInput("2 volte a settimana")).toBe(3.5 * day);
     expect(parseDurationInput("2 volte alla settimana")).toBe(3.5 * day);
+    expect(parseDurationInput("3 volte a settimana")).toBe(Math.round((7 * day) / 3));
     expect(parseDurationInput("0 volte a settimana")).toBeNull();
   });
 
   it("descrive la frequenza", () => {
     expect(formatFrequency(7 * day)).toBe("1 volta a settimana");
     expect(formatFrequency(3.5 * day)).toBe("2 volte a settimana");
+    expect(formatFrequency(Math.round((7 * day) / 3))).toBe("3 volte a settimana");
     expect(formatFrequency(14 * day)).toBe("ogni 2 settimane");
     expect(formatFrequency(4 * day)).toBe("ogni 4 giorni");
   });

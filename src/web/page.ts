@@ -258,8 +258,15 @@ const PAGE_TEMPLATE = `<!doctype html>
 
   // ---------- Utilita' ----------
   var HOUR = 3600000, DAY = 24 * HOUR, WEEK = 7 * DAY;
+  var FREQUENCIES = [
+    { label: "Ogni giorno", value: "1 giorno", ms: DAY },
+    { label: "3 volte a settimana", value: "3 volte a settimana", ms: Math.round(WEEK / 3) },
+    { label: "2 volte a settimana", value: "2 volte a settimana", ms: Math.round(WEEK / 2) },
+    { label: "Ogni settimana", value: "1 settimana", ms: WEEK },
+    { label: "Ogni 2 settimane", value: "2 settimane", ms: 2 * WEEK },
+    { label: "Ogni mese", value: "30 giorni", ms: 30 * DAY }
+  ];
   function intervalToInput(ms) {
-    if (ms < WEEK && WEEK % ms === 0 && WEEK / ms > 1) return { n: WEEK / ms, unit: "volte a settimana" };
     if (ms % WEEK === 0) return { n: ms / WEEK, unit: "settimane" };
     if (ms % DAY === 0) return { n: ms / DAY, unit: "giorni" };
     return { n: Math.max(1, Math.round(ms / HOUR)), unit: "ore" };
@@ -530,13 +537,23 @@ const PAGE_TEMPLATE = `<!doctype html>
 
   // ---------- Form attivita' ----------
   function taskForm(task) {
-    var current = task ? intervalToInput(task.intervalMs) : { n: 1, unit: "settimane" };
+    var startMs = task ? task.intervalMs : WEEK;
+    var preset = FREQUENCIES.filter(function (f) { return f.ms === startMs; })[0];
+    var current = intervalToInput(startMs);
     var name = h("input", { type: "text", maxlength: "80", placeholder: "Es. Pulire il bagno", value: task ? task.name : "" });
+    var freq = h("select", {});
+    FREQUENCIES.forEach(function (f) {
+      var opt = h("option", { value: f.value }, f.label); if (preset && preset.value === f.value) opt.selected = true; freq.appendChild(opt);
+    });
+    var customOpt = h("option", { value: "custom" }, "Personalizzata..."); if (!preset) customOpt.selected = true; freq.appendChild(customOpt);
     var n = h("input", { type: "number", min: "1", value: String(current.n) });
     var unit = h("select", {});
-    ["ore", "giorni", "settimane", "volte a settimana"].forEach(function (u) {
+    ["ore", "giorni", "settimane"].forEach(function (u) {
       var opt = h("option", { value: u }, u); if (u === current.unit) opt.selected = true; unit.appendChild(opt);
     });
+    var customRow = h("div", { class: "row", style: "margin-top:8px" }, "Ogni", n, unit);
+    function syncFrequency() { customRow.style.display = freq.value === "custom" ? "" : "none"; }
+    freq.addEventListener("change", syncFrequency); syncFrequency();
     var severity = h("select", {});
     ["low", "medium", "high"].forEach(function (s) {
       var opt = h("option", { value: s }, SEVERITY[s]); if ((task ? task.severity : "medium") === s) opt.selected = true; severity.appendChild(opt);
@@ -546,14 +563,15 @@ const PAGE_TEMPLATE = `<!doctype html>
     var label = task ? "Avvisa il gruppo della modifica" : "Avvisa il gruppo della nuova attivita'";
 
     function save() {
-      var body = { name: name.value, interval: n.value + " " + unit.value, severity: severity.value, notify: notify.checked, assignment: assign.value() };
+      var body = { name: name.value, interval: freq.value === "custom" ? n.value + " " + unit.value : freq.value, severity: severity.value, notify: notify.checked, assignment: assign.value() };
       var request = task ? api("PATCH", "/api/houses/" + state.houseId + "/tasks/" + task.id, body) : api("POST", "/api/houses/" + state.houseId + "/tasks", body);
       request.then(function () { state.editing = null; state.adding = false; return loadHouse(); }).catch(fail);
     }
 
     return h("div", { class: "card" },
       h("div", { class: "row" }, h("div", { class: "grow" }, name)),
-      h("div", { class: "row", style: "margin-top:8px" }, "Ogni", n, unit, severity),
+      h("div", { class: "row", style: "margin-top:8px" }, freq, severity),
+      customRow,
       assign.el,
       h("label", { class: "check", style: "margin-top:10px" }, notify, label),
       h("div", { class: "row", style: "margin-top:10px" },
