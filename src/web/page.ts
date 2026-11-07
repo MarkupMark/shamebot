@@ -55,6 +55,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   .badge.out { border-color: var(--warn); color: var(--warn); }
   nav button.active { background: var(--accent); color: var(--accent-text); border-color: transparent; }
   .task-name { font-weight: 600; }
+  .group-title { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 2px 2px; }
   .card.task { padding: 10px 12px; margin: 8px 0; }
   .row.tight { gap: 6px; flex-wrap: nowrap; }
   .task-meta { margin-top: 1px; font-size: .85rem; }
@@ -160,10 +161,10 @@ const PAGE_TEMPLATE = `<!doctype html>
 <script>
 (function () {
   var BOT_USERNAME = __BOT_USERNAME__;
-  var savedRange = null;
-  try { savedRange = localStorage.getItem("tlRange"); } catch (e) {}
+  var savedRange = null, savedOrder = null;
+  try { savedRange = localStorage.getItem("tlRange"); savedOrder = localStorage.getItem("taskOrder"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", tlExpanded: false, digestDraft: {}, insultDraft: {}, insultSev: "high" };
+    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", order: savedOrder === "mine" || savedOrder === "mineany" ? savedOrder : "all", tlExpanded: false, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -627,10 +628,48 @@ const PAGE_TEMPLATE = `<!doctype html>
   }
 
   // ---------- Viste ----------
+  var ORDERS = [
+    ["all", "Tutte", "In ordine di scadenza"],
+    ["mine", "Prima le mie", "Le tue, poi di chiunque, poi degli altri"],
+    ["mineany", "Mie + chiunque", "Le tue e di chiunque insieme, poi degli altri"]
+  ];
+  // Gruppi in cui dividere le attivita' secondo l'ordinamento scelto: [titolo, filtro].
+  function taskGroups(tasks) {
+    var me = state.data.viewerId;
+    function byDue(a, b) { return new Date(a.dueAt) - new Date(b.dueAt); }
+    var sorted = tasks.slice().sort(byDue);
+    function mine(t) { return t.assigneeId === me; }
+    function anyone(t) { return t.assigneeId === null || t.assigneeId === undefined; }
+    var groups = [];
+    if (state.order === "mine") groups = [["Tue", mine], ["Di chiunque", anyone], ["Degli altri", function (t) { return !mine(t) && !anyone(t); }]];
+    else if (state.order === "mineany") groups = [["Tue e di chiunque", function (t) { return mine(t) || anyone(t); }], ["Degli altri", function (t) { return !mine(t) && !anyone(t); }]];
+    else return [{ title: null, tasks: sorted }];
+    return groups.map(function (g) { return { title: g[0], tasks: sorted.filter(g[1]) }; }).filter(function (g) { return g.tasks.length; });
+  }
+
+  function orderPicker() {
+    var seg = h("div", { class: "seg", role: "tablist" });
+    ORDERS.forEach(function (o) {
+      seg.appendChild(h("button", { class: state.order === o[0] ? "on" : "", onclick: function () {
+        state.order = o[0];
+        try { localStorage.setItem("taskOrder", o[0]); } catch (e) {}
+        render();
+      } }, o[1]));
+    });
+    var hint = ORDERS.filter(function (o) { return o[0] === state.order; })[0][2];
+    return h("div", { style: "margin:10px 0 4px" }, seg, h("div", { class: "muted", style: "font-size:.8rem;margin-top:4px" }, hint));
+  }
+
   function viewTasks() {
-    var items = state.data.tasks.map(taskCard);
+    var groups = taskGroups(state.data.tasks);
+    var items = [];
+    groups.forEach(function (g) {
+      if (g.title) items.push(h("div", { class: "group-title" }, g.title));
+      g.tasks.forEach(function (t) { items.push(taskCard(t)); });
+    });
     return h("div", {},
       state.adding ? taskForm(null) : h("button", { class: "primary", onclick: function () { state.adding = true; state.editing = null; render(); } }, "+ Nuova attivita'"),
+      state.data.tasks.length > 1 ? orderPicker() : null,
       items.length ? items : h("p", { class: "muted" }, "Nessuna attivita' ancora.")
     );
   }
