@@ -542,11 +542,16 @@ const PAGE_TEMPLATE = `<!doctype html>
     var preset = FREQUENCIES.filter(function (f) { return f.ms === startMs; })[0];
     var current = intervalToInput(startMs);
     var name = h("input", { type: "text", maxlength: "80", placeholder: "Es. Pulire il bagno", value: task ? task.name : "" });
-    var freq = h("select", {});
-    FREQUENCIES.forEach(function (f) {
-      var opt = h("option", { value: f.value }, f.label); if (preset && preset.value === f.value) opt.selected = true; freq.appendChild(opt);
-    });
-    var customOpt = h("option", { value: "custom" }, "Personalizzata..."); if (!preset) customOpt.selected = true; freq.appendChild(customOpt);
+    var freq = { value: preset ? preset.value : "custom" };
+    var freqChips = h("div", { class: "chips" });
+    function drawFrequency() {
+      var options = FREQUENCIES.concat([{ label: "Personalizzata...", value: "custom" }]);
+      freqChips.replaceChildren.apply(freqChips, options.map(function (f) {
+        return h("button", { type: "button", class: "chip" + (freq.value === f.value ? " on" : ""), onclick: function () {
+          freq.value = f.value; drawFrequency(); syncFrequency();
+        } }, f.label);
+      }));
+    }
     var n = h("input", { type: "number", min: "1", value: String(current.n) });
     var unit = h("select", {});
     ["ore", "giorni", "settimane"].forEach(function (u) {
@@ -554,7 +559,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     });
     var customRow = h("div", { class: "row", style: "margin-top:8px" }, "Ogni", n, unit);
     function syncFrequency() { customRow.style.display = freq.value === "custom" ? "" : "none"; }
-    freq.addEventListener("change", syncFrequency); syncFrequency();
+    drawFrequency(); syncFrequency();
     var severity = h("select", {});
     ["low", "medium", "high"].forEach(function (s) {
       var opt = h("option", { value: s }, SEVERITY[s]); if ((task ? task.severity : "medium") === s) opt.selected = true; severity.appendChild(opt);
@@ -571,8 +576,10 @@ const PAGE_TEMPLATE = `<!doctype html>
 
     return h("div", { class: "card" },
       h("div", { class: "row" }, h("div", { class: "grow" }, name)),
-      h("div", { class: "row", style: "margin-top:8px" }, freq, severity),
+      h("div", { class: "assign-title", style: "margin-top:10px" }, "Frequenza"),
+      freqChips,
       customRow,
+      h("div", { class: "row", style: "margin-top:8px" }, severity),
       assign.el,
       h("label", { class: "check", style: "margin-top:10px" }, notify, label),
       h("div", { class: "row", style: "margin-top:10px" },
