@@ -517,7 +517,8 @@ const PAGE_TEMPLATE = `<!doctype html>
         body.appendChild(h("div", { class: "muted", style: "margin-top:6px;font-size:.8rem" },
           "Il turno con la scadenza piu' vicina decide a chi tocca. Finiti i turni, l'attivita' torna a chiunque con la frequenza normale."));
       }
-      wrap.replaceChildren(h("div", { class: "assign-title" }, "A chi tocca"), modes, body);
+      wrap.replaceChildren(h("div", { class: "assign-title" }, "A chi tocca"), modes);
+      if (body) wrap.appendChild(body);
     }
     draw();
 
