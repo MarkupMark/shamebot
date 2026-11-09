@@ -15,6 +15,7 @@ import { verifyTelegramMiniAppInitData } from "./services/web-auth.js";
 import { renderAppPage } from "./web/page.js";
 import { AbsenceError } from "./services/houses.js";
 import { renderContributePage } from "./web/contribute.js";
+import { renderAdminPage } from "./web/admin.js";
 import { formatFrequency, parseDurationInput } from "./utils/duration.js";
 import { severityFromItalian } from "./utils/labels.js";
 import { sortTasksByDueDate } from "./utils/tasks.js";
@@ -37,6 +38,7 @@ const defaultRepoUrl = "https://github.com/MarkupMark/shamebot";
 const sessionCookieName = "shamebot_session";
 const webLoginRequestTtlMs = 10 * 60 * 1000;
 const maxTaskNameLength = 80;
+const maxShiftDays = 365;
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -73,6 +75,10 @@ export default {
 
       if ((url.pathname === "/" || url.pathname === "/login") && request.method === "GET") {
         return htmlResponse(renderAppPage({ botUsername, siteUrl }));
+      }
+
+      if (url.pathname === "/admin" && request.method === "GET") {
+        return htmlResponse(renderAdminPage());
       }
 
       if (url.pathname === "/contribuisci" && request.method === "GET") {
@@ -292,6 +298,24 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       notifyOption(body),
     );
     return jsonResponse({ ok: true, task: mapTaskView(task), notified }, { status: 201 });
+  }
+
+  // Centro di comando (/admin): sposta di N giorni la scadenza delle attivita' scelte.
+  if (rest === "tasks/shift") {
+    if (method !== "POST") {
+      return methodNotAllowed(["POST"]);
+    }
+    const body = await readJsonObject(request);
+    const days = body.days;
+    if (typeof days !== "number" || !Number.isInteger(days) || days === 0 || Math.abs(days) > maxShiftDays) {
+      throw new HttpError(400, `I giorni devono essere un numero intero tra -${maxShiftDays} e ${maxShiftDays}, diverso da 0.`);
+    }
+    const taskIds = Array.isArray(body.taskIds) ? body.taskIds.filter((id): id is number => Number.isInteger(id)) : [];
+    if (taskIds.length === 0) {
+      throw new HttpError(400, "Scegli almeno un'attivita'.");
+    }
+    const tasks = await store.shiftTaskDeadlines(house.id, user.id, taskIds, days * 86_400_000, new Date());
+    return jsonResponse({ ok: true, shifted: tasks.length, tasks: tasks.map((task) => mapTaskView(task)) });
   }
 
   if (rest === "absences" && method === "POST") {

@@ -315,6 +315,49 @@ export class HouseStore {
     return { absence: (await this.getAbsence(houseId, absenceId)) as Absence, moved };
   }
 
+  /**
+   * Centro di comando: sposta la scadenza delle attivita' indicate di `shiftMs` (negativo = anticipa).
+   * Per le attivita' a turni personalizzati si spostano tutti i turni aperti. I promemoria gia' inviati
+   * ripartono da zero. Restituisce le attivita' aggiornate (ignora gli id che non sono della casa).
+   */
+  async shiftTaskDeadlines(houseId: number, userId: number, taskIds: number[], shiftMs: number, now: Date): Promise<Task[]> {
+    const wanted = new Set(taskIds);
+    const shifted: Task[] = [];
+    const days = Math.round(shiftMs / 86_400_000);
+    const detail = `scadenza ${days > 0 ? "posticipata" : "anticipata"} di ${Math.abs(days)} ${Math.abs(days) === 1 ? "giorno" : "giorni"}`;
+
+    for (const task of await this.listTasks(houseId)) {
+      if (!wanted.has(task.id)) {
+        continue;
+      }
+      if (task.assignMode === "custom") {
+        const open = (await this.listOpenSlots(houseId)).filter((slot) => slot.taskId === task.id);
+        for (const slot of open) {
+          await this.db.run("UPDATE task_slots SET starts_at = ?, due_at = ? WHERE id = ?", [
+            new Date(new Date(slot.startsAt).getTime() + shiftMs).toISOString(),
+            new Date(new Date(slot.dueAt).getTime() + shiftMs).toISOString(),
+            slot.id,
+          ]);
+        }
+      }
+      if (task.assignMode !== "custom" || !task.slotDueAt) {
+        await this.db.run("UPDATE tasks SET cycle_anchor_at = ? WHERE id = ?", [
+          new Date(new Date(task.cycleAnchorAt).getTime() + shiftMs).toISOString(),
+          task.id,
+        ]);
+      }
+      await this.db.run(
+        `UPDATE tasks SET reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL,
+           overdue_notice_sent_at = NULL, nudge_sent_at = NULL, updated_at = ? WHERE id = ?`,
+        [now.toISOString(), task.id],
+      );
+      await this.addLog(houseId, userId, task.id, task.name, "updated", detail, now);
+      shifted.push((await this.getTask(houseId, task.id)) as Task);
+    }
+
+    return shifted;
+  }
+
   // ---- Insulti ----
 
   /** Gli insulti scritti da un coinquilino, per gravita'. Sono segreti: si mostrano solo al loro autore. */

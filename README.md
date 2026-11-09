@@ -35,6 +35,8 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   la frase iniziale: l'elenco sotto e' sempre automatico. Partono una volta al giorno e, se non c'e' niente da segnalare,
   di default non partono.
 - **Registro.** Ogni attivita' fatta, creata, modificata o eliminata finisce nel log (`/log` o portale).
+- **Centro di comando.** La pagina `/admin` (non linkata dal portale, serve lo stesso login) sposta in blocco la
+  scadenza delle attivita' scelte di N giorni, avanti o indietro. Ogni spostamento finisce nel registro.
 - **Avvisi sulle modifiche.** Quando si crea o modifica un'attivita' il bot puo' avvisare il gruppo
   (es. `✏️ Luca · Lavare il bagno` / `frequenza 1×/sett → 2×/sett`). I messaggi del bot sono volutamente brevi.
   Valore predefinito per casa con `/notifiche on|off`; per la singola azione c'e' la spunta nel portale

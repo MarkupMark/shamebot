@@ -8,6 +8,7 @@ import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
 import { renderAppPage } from "../src/web/page.js";
 import { renderContributePage } from "../src/web/contribute.js";
+import { renderAdminPage } from "../src/web/admin.js";
 import { defaultInsults } from "../src/services/insults.js";
 
 const port = Number(process.env.PORT ?? 8790);
@@ -31,6 +32,8 @@ const digestText = {
   morning: { intro: "☀️ Buongiorno! Ecco cosa c'è da fare oggi", body: "In ritardo\n• Buttare l'umido · da 5h · 👤 Tu\n\nOggi\n• Lavatrice · entro le 21:00 · 👤 Anna\n\nSe vuoi fare altro oggi:\n• Pavimenti · entro dom 8\n• Pulire il bagno · entro mer 11 · 👤 Marco\n• Superfici cucina · entro gio 12" },
   evening: { intro: "🌙 Ecco cosa dovrai fare domani", body: "Domani\n• Pavimenti · entro le 14:00" },
 };
+// Spostamenti fatti dal centro di comando (/admin), per id attivita'.
+const shifts: Record<number, number> = {};
 const H = 3_600_000;
 const D = 24 * H;
 
@@ -39,7 +42,7 @@ function buildData() {
   const iso = (ms: number) => new Date(now + ms).toISOString();
   const task = (id: number, name: string, dueIn: number, extra: Record<string, unknown> = {}) => ({
     id, name, intervalMs: 7 * D, frequency: "ogni settimana", severity: "medium",
-    dueAt: iso(dueIn), startAt: iso(dueIn - 7 * D), lastCompletedByName: "Anna", completedCount: 3,
+    dueAt: iso(dueIn + (shifts[id] ?? 0)), startAt: iso(dueIn + (shifts[id] ?? 0) - 7 * D), lastCompletedByName: "Anna", completedCount: 3,
     assignMode: "anyone", assignUserIds: [], assigneeId: null, assigneeName: null, slots: [], ...extra,
   });
   return {
@@ -97,6 +100,10 @@ createServer((req, res) => {
     res.setHeader("content-type", "text/html; charset=utf-8");
     return res.end(renderAppPage({ botUsername: "vergognati_bot", siteUrl: "" }));
   }
+  if (url === "/admin") {
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    return res.end(renderAdminPage());
+  }
   if (url === "/contribuisci") {
     res.setHeader("content-type", "text/html; charset=utf-8");
     return res.end(renderContributePage({ repoUrl: "https://github.com/MarkupMark/shamebot" }));
@@ -141,10 +148,16 @@ createServer((req, res) => {
         }
         return res.end(JSON.stringify(buildData()));
       }
+      if (req.method === "POST" && url === "/api/houses/1/tasks/shift") {
+        // Centro di comando: sposta davvero le scadenze finte (restano in memoria).
+        const parsed = JSON.parse(body || "{}") as { taskIds?: number[]; days?: number };
+        for (const id of parsed.taskIds ?? []) shifts[id] = (shifts[id] ?? 0) + (parsed.days ?? 0) * D;
+        return res.end(JSON.stringify({ ok: true, shifted: parsed.taskIds?.length ?? 0, tasks: [] }));
+      }
       res.end(JSON.stringify(req.method === "GET" ? buildData() : { ok: true }));
     });
     return;
   }
   res.statusCode = 404;
   res.end("{}");
-}).listen(port, () => console.log(`Anteprima portale: http://localhost:${port}  (contribuisci: /contribuisci)`));
+}).listen(port, () => console.log(`Anteprima portale: http://localhost:${port}  (contribuisci: /contribuisci, centro di comando: /admin)`));

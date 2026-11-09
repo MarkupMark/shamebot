@@ -131,6 +131,30 @@ describe("portale", () => {
   });
 });
 
+describe("Centro di comando /admin", () => {
+  it("serve la pagina e sposta le scadenze solo ai membri, validando i giorni", async () => {
+    const { call, lucaSession, annaSession, house } = await setup();
+    const page = await call(null, "GET", "/admin");
+    expect(page.status).toBe(200);
+    expect(page.json).toContain("Centro di comando");
+
+    const base = `/api/houses/${house.id}`;
+    const created = await call(lucaSession, "POST", `${base}/tasks`, { name: "Bagno", interval: "1 settimana", notify: false });
+    const taskId = created.json.task.id as number;
+    const before = new Date(created.json.task.dueAt).getTime();
+
+    expect((await call(null, "POST", `${base}/tasks/shift`, { taskIds: [taskId], days: 2 })).status).toBe(401);
+    expect((await call(annaSession, "POST", `${base}/tasks/shift`, { taskIds: [taskId], days: 2 })).status).toBe(404);
+    expect((await call(lucaSession, "POST", `${base}/tasks/shift`, { taskIds: [taskId], days: 0 })).status).toBe(400);
+    expect((await call(lucaSession, "POST", `${base}/tasks/shift`, { taskIds: [taskId], days: 1.5 })).status).toBe(400);
+    expect((await call(lucaSession, "POST", `${base}/tasks/shift`, { taskIds: [], days: 2 })).status).toBe(400);
+
+    const shifted = await call(lucaSession, "POST", `${base}/tasks/shift`, { taskIds: [taskId], days: -3 });
+    expect(shifted.json.shifted).toBe(1);
+    expect(new Date(shifted.json.tasks[0].dueAt).getTime()).toBe(before - 3 * 86_400_000);
+  });
+});
+
 describe("Pagina /contribuisci", () => {
   it("e' pubblica e punta al repository con fork e prompt", async () => {
     const { call } = await setup();
