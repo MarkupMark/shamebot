@@ -862,9 +862,22 @@ export class HouseStore {
 
   async createWebLoginRequest(expiresAt: Date): Promise<WebLoginRequest> {
     const token = `${crypto.randomUUID().replace(/-/g, "")}${crypto.randomUUID().replace(/-/g, "")}`;
+    const now = new Date().toISOString();
+    // Codice di 6 cifre da scrivere al bot, unico tra le richieste ancora valide.
+    let code = randomLoginCode();
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const clash = await this.db.first(
+        "SELECT token FROM web_login_requests WHERE code = ? AND status = 'pending' AND expires_at > ?",
+        [code, now],
+      );
+      if (!clash) {
+        break;
+      }
+      code = randomLoginCode();
+    }
     await this.db.run(
-      "INSERT INTO web_login_requests (token, status, created_at, expires_at) VALUES (?, 'pending', ?, ?)",
-      [token, new Date().toISOString(), expiresAt.toISOString()],
+      "INSERT INTO web_login_requests (token, code, status, created_at, expires_at) VALUES (?, ?, 'pending', ?, ?)",
+      [token, code, now, expiresAt.toISOString()],
     );
     return (await this.getWebLoginRequest(token)) as WebLoginRequest;
   }
@@ -894,6 +907,15 @@ export class HouseStore {
       [identity.telegramId, identity.username, identity.displayName, approvedAt.toISOString(), token],
     );
     return await this.getWebLoginRequest(token);
+  }
+
+  /** Conferma dal bot scrivendo il codice mostrato sul portale. null se nessuna richiesta valida ha quel codice. */
+  async approveWebLoginRequestByCode(code: string, identity: TelegramIdentity, approvedAt: Date): Promise<WebLoginRequest | null> {
+    const row = await this.db.first(
+      "SELECT token FROM web_login_requests WHERE code = ? AND status = 'pending' AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
+      [code, approvedAt.toISOString()],
+    );
+    return row ? await this.approveWebLoginRequest(String(row.token), identity, approvedAt) : null;
   }
 
   async claimWebLoginRequest(token: string, claimedAt: Date): Promise<WebLoginRequest | null> {
@@ -1056,9 +1078,15 @@ function mapLogEntry(row: SqlRow): LogEntry {
   };
 }
 
+function randomLoginCode(): string {
+  const value = crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000;
+  return String(value).padStart(6, "0");
+}
+
 function mapWebLoginRequest(row: SqlRow): WebLoginRequest {
   return {
     token: String(row.token),
+    code: nullableString(row.code),
     status: String(row.status) as WebLoginRequest["status"],
     telegramId: row.telegram_id === null || row.telegram_id === undefined ? null : Number(row.telegram_id),
     username: nullableString(row.username),

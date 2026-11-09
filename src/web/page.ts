@@ -42,6 +42,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; font-weight: 600; }
   button.danger { color: var(--late); }
   button.ghost { background: transparent; }
+  .login-code { font-size: 32px; font-weight: 700; letter-spacing: 6px; text-align: center; margin: 8px 0; font-variant-numeric: tabular-nums; user-select: all; }
   input[type=text] { width: 100%; }
   input[type=number] { width: 80px; }
   nav { display: flex; gap: 6px; margin: 12px 0; }
@@ -229,24 +230,25 @@ const PAGE_TEMPLATE = `<!doctype html>
     api("POST", "/auth/telegram/request").then(function (res) {
       var url = res.request.botUrl;
       if (popup) popup.location = url; else window.location.href = url;
-      renderLoginWaiting(url);
+      renderLoginWaiting(url, res.request.code);
       pollLogin(res.request.token, 0);
     }).catch(function (err) { renderLogin(err.message); });
   }
 
-  function renderLoginWaiting(url) {
+  function renderLoginWaiting(url, code) {
     root.replaceChildren(
       h("h1", {}, "ShameBot"),
       h("p", { class: "muted" }, "Le faccende di casa, tra coinquilini."),
       h("div", { class: "card" },
-        h("p", {}, "Conferma l'accesso su Telegram:"),
+        h("p", {}, "Per entrare, scrivi questo codice al bot su Telegram:"),
+        h("p", { class: "login-code" }, code || "------"),
         h("ol", {},
-          h("li", {}, "Apri la chat con il bot (si apre da sola, altrimenti usa il bottone qui sotto)"),
-          h("li", {}, "Premi AVVIA / START in fondo alla chat"),
-          h("li", {}, "Quando il bot risponde «Login approvato» torna qui: entri da solo")
+          h("li", {}, "Apri la chat con il bot (anche dal telefono)"),
+          h("li", {}, "Invia il codice qui sopra come messaggio"),
+          h("li", {}, "Quando il bot risponde «Login approvato» entri da solo")
         ),
         h("button", { class: "primary", onclick: function () { window.open(url, "_blank"); } }, "Apri il bot"),
-        h("p", { class: "muted" }, "In attesa della conferma...")
+        h("p", { class: "muted" }, "In attesa della conferma... Il codice vale 10 minuti.")
       )
     );
   }

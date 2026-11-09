@@ -1,6 +1,6 @@
 import { Bot, InlineKeyboard } from "grammy";
 import type { Context } from "grammy";
-import type { AppUser, House, LogEntry } from "../types/domain.js";
+import type { AppUser, House, LogEntry, WebLoginRequest } from "../types/domain.js";
 import type { HouseStore } from "../services/store.js";
 import { AbsenceError, HouseService, SwapError, type EditInChat } from "../services/houses.js";
 import { compactTaskCount, formatTaskList, safeSend, type SendToChat } from "../services/notify.js";
@@ -44,9 +44,12 @@ export const groupCommands = [
 /** Menu comandi nella chat privata con il bot. */
 export const privateCommands = [
   { command: "app", description: "Apri il portale" },
+  { command: "login", description: "Conferma il login dal sito" },
   { command: "help", description: "Comandi" },
   { command: "start", description: "Come iniziare" },
 ] as const;
+
+const loginCodePattern = /^\d{6}$/;
 
 const helpText = [
   "/attivita · elenco",
@@ -195,27 +198,66 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
   async function handlePrivateStart(ctx: Context, user: AppUser): Promise<void> {
     const payload = typeof ctx.match === "string" ? ctx.match.trim() : "";
     if (payload.startsWith("login_")) {
-      const request = await store.approveWebLoginRequest(
-        payload.replace("login_", ""),
-        { telegramId: user.telegramId, username: user.username, displayName: user.displayName },
-        new Date(),
-      );
-
-      if (!request || request.status === "expired") {
-        await ctx.reply("Login scaduto. Riprova dal portale.");
-      } else if (request.status === "claimed") {
-        await ctx.reply("Login già usato. Riprova dal portale.");
-      } else {
-        await ctx.reply("✓ Login approvato. Torna al browser.");
-      }
+      const request = await store.approveWebLoginRequest(payload.replace("login_", ""), identityOf(user), new Date());
+      await replyLoginResult(ctx, request);
+      return;
+    }
+    if (loginCodePattern.test(payload)) {
+      await approveLoginCode(ctx, user, payload);
       return;
     }
 
     await ctx.reply(
-      ["1. Aggiungimi al gruppo della casa", "2. Scrivi /start nel gruppo", "3. Gestisci le attività da lì o dal portale"].join("\n"),
+      [
+        "1. Aggiungimi al gruppo della casa",
+        "2. Scrivi /start nel gruppo",
+        "3. Gestisci le attività da lì o dal portale",
+        "",
+        "🔑 Login dal sito: scrivimi qui il codice di 6 cifre che vedi",
+      ].join("\n"),
       { reply_markup: buildMiniAppKeyboard(siteUrl) },
     );
   }
+
+  function identityOf(user: AppUser) {
+    return { telegramId: user.telegramId, username: user.username, displayName: user.displayName };
+  }
+
+  async function replyLoginResult(ctx: Context, request: WebLoginRequest | null): Promise<void> {
+    if (!request || request.status === "expired") {
+      await ctx.reply("⌛ Codice scaduto o sbagliato. Riprova dal portale.");
+    } else if (request.status === "claimed") {
+      await ctx.reply("⚠️ Login già usato. Riprova dal portale.");
+    } else {
+      await ctx.reply("✓ Login approvato. Torna al browser.");
+    }
+  }
+
+  async function approveLoginCode(ctx: Context, user: AppUser, code: string): Promise<void> {
+    const request = await store.approveWebLoginRequestByCode(code, identityOf(user), new Date());
+    await replyLoginResult(ctx, request);
+  }
+
+  // Login dal portale: "/login 123456" oppure il codice da solo, solo in chat privata.
+  bot.command("login", async (ctx) => {
+    const user = await identify(ctx);
+    if (!user || ctx.chat?.type !== "private") {
+      return;
+    }
+    const code = ctx.match.trim();
+    if (!loginCodePattern.test(code)) {
+      await ctx.reply("🔑 Scrivi il codice di 6 cifre che vedi sul sito, es. /login 123456");
+      return;
+    }
+    await approveLoginCode(ctx, user, code);
+  });
+
+  bot.chatType("private").hears(/^\s*(\d{6})\s*$/, async (ctx) => {
+    const user = await identify(ctx);
+    if (user) {
+      await approveLoginCode(ctx, user, ctx.match[1]!);
+    }
+  });
 
   bot.command("help", async (ctx) => {
     const inGroup = ctx.chat && ctx.chat.type !== "private";

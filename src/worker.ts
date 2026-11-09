@@ -168,6 +168,7 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
         ok: true,
         request: {
           token: loginRequest.token,
+          code: loginRequest.code,
           status: loginRequest.status,
           expiresAt: loginRequest.expiresAt,
           botUrl: `https://t.me/${botUsername}?start=login_${loginRequest.token}`,

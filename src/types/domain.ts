@@ -114,6 +114,8 @@ export type LogEntry = {
 
 export type WebLoginRequest = {
   token: string;
+  /** Codice di 6 cifre da scrivere al bot (null per le richieste create prima della migrazione 0028). */
+  code: string | null;
   status: WebLoginRequestStatus;
   telegramId: number | null;
   username: string | null;
