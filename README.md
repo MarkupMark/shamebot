@@ -18,6 +18,10 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   e un periodo (un giorno specifico, entro una settimana, entro un mese). Il turno aperto con la scadenza piu' vicina
   decide a chi tocca e quando scade; finiti i turni l'attivita' torna a chiunque con la frequenza normale.
   Promemoria ed elenco nel gruppo mostrano a chi tocca. Si imposta dal portale.
+- **Turni.** Per le attivita' *a turno* l'editor mostra l'ordine (il primo e' di turno ora): si riordina con ↑ ↓
+  o con "Inverti ordine". Dal pulsante 🔄 sulla card un coinquilino chiede a un altro della rotazione di scambiarsi il
+  turno; nel gruppo compaiono "✅ Accetto" / "❌ Rifiuto" (risponde solo chi l'ha ricevuta, anche dal portale).
+  Se accetta, i due si invertono nella rotazione. Chi ha chiesto puo' annullare finche' non c'e' risposta.
 - **Ordine delle attivita'.** Nella scheda Attivita' ognuno sceglie come vederle: *Tutte* (per scadenza), *Prima le mie* (tue, di chiunque, degli altri)
   o *Mie + chiunque* (tue e di chiunque insieme, poi gli altri). La scelta resta salvata nel browser.
 - **Fuori casa.** Dal portale (scheda Membri) o con `/fuori` un coinquilino dice "🧳 Sono fuori casa"; nel gruppo compare la richiesta con il pulsante

@@ -75,6 +75,23 @@ export function awayApprovedMessage(name: string, approver: string): string {
   return `🧳 ${name} è fuori casa · ok di ${approver}\nLe sue attività sono in pausa fino al rientro.`;
 }
 
+/** "a Luca" ma "ad Anna". */
+export function toName(name: string): string {
+  return `${/^[aA]/.test(name) ? "ad" : "a"} ${name}`;
+}
+
+export function swapRequestedMessage(requester: string, target: string, taskName: string, effect: string | null): string {
+  return `🔄 ${requester} chiede ${toName(target)} di scambiarsi il turno di "${taskName}"${effect ? `\n${effect}` : ""}`;
+}
+
+export function swapAcceptedMessage(target: string, taskName: string, assignee: string | null): string {
+  return `🔄 Turno scambiato · ok di ${target}\n"${taskName}": ora tocca ${toName(assignee ?? "?")}`;
+}
+
+export function swapRejectedMessage(target: string, taskName: string): string {
+  return `🔄 ${target} non accetta lo scambio di turno di "${taskName}"`;
+}
+
 export function awayEndedMessage(name: string, endedBy: string | null, moved: MovedTask[], now: Date): string {
   const lines = [`🏠 ${name} è rientrato${endedBy && endedBy !== name ? ` (segnato da ${endedBy})` : ""}`];
   for (const item of moved) {

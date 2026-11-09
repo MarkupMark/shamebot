@@ -155,6 +155,28 @@ describe("Centro di comando /admin", () => {
   });
 });
 
+describe("Scambio di turno dal portale", () => {
+  it("richiesta, elenco in attesa e risposta di chi la riceve", async () => {
+    const { call, store, house, luca, anna, lucaSession, annaSession } = await setup();
+    await store.addMember(house.id, anna.id);
+    const base = `/api/houses/${house.id}`;
+    const created = await call(lucaSession, "POST", `${base}/tasks`, {
+      name: "Bagno", interval: "1 settimana", notify: false, assignment: { mode: "alternate", userIds: [luca.id, anna.id] },
+    });
+    const taskId = created.json.task.id as number;
+
+    expect((await call(lucaSession, "POST", `${base}/tasks/${taskId}/swap`, {})).status).toBe(400);
+    const requested = await call(lucaSession, "POST", `${base}/tasks/${taskId}/swap`, { targetId: anna.id });
+    expect(requested.json.swaps).toMatchObject([{ taskId, requesterName: "Luca", targetName: "Anna" }]);
+    const swapId = requested.json.swaps[0].id as number;
+
+    expect((await call(lucaSession, "POST", `${base}/swaps/${swapId}/accept`)).status).toBe(409);
+    const accepted = await call(annaSession, "POST", `${base}/swaps/${swapId}/accept`);
+    expect(accepted.json.swaps).toEqual([]);
+    expect(accepted.json.tasks[0]).toMatchObject({ assigneeName: "Anna", assignUserIds: [anna.id, luca.id] });
+  });
+});
+
 describe("Pagina /contribuisci", () => {
   it("e' pubblica e punta al repository con fork e prompt", async () => {
     const { call } = await setup();

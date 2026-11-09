@@ -2,7 +2,7 @@ import { Bot, InlineKeyboard } from "grammy";
 import type { Context } from "grammy";
 import type { AppUser, House, LogEntry } from "../types/domain.js";
 import type { HouseStore } from "../services/store.js";
-import { AbsenceError, HouseService, type EditInChat } from "../services/houses.js";
+import { AbsenceError, HouseService, SwapError, type EditInChat } from "../services/houses.js";
 import { compactTaskCount, formatTaskList, safeSend, type SendToChat } from "../services/notify.js";
 import { formatFrequencyShort, parseDurationInput } from "../utils/duration.js";
 import { severityFromItalian, severityToItalian } from "../utils/labels.js";
@@ -347,6 +347,22 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
       await ctx.answerCallbackQuery({ text: "✓ Confermato" });
     } catch (error) {
       await ctx.answerCallbackQuery({ text: error instanceof AbsenceError ? error.message : "Errore", show_alert: error instanceof AbsenceError });
+    }
+  });
+
+  /** "✅ Accetto" / "❌ Rifiuto" sotto una richiesta di scambio di turno: risponde solo chi l'ha ricevuta. */
+  bot.callbackQuery(/^swap:(\d+):(yes|no)$/, async (ctx) => {
+    const resolved = await resolveHouse(ctx);
+    if (!resolved) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    const accept = ctx.match[2] === "yes";
+    try {
+      await service.answerSwap(resolved.house, resolved.user, Number(ctx.match[1]), accept);
+      await ctx.answerCallbackQuery({ text: accept ? "✓ Scambiato" : "Rifiutato" });
+    } catch (error) {
+      await ctx.answerCallbackQuery({ text: error instanceof SwapError ? error.message : "Errore", show_alert: error instanceof SwapError });
     }
   });
 

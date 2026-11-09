@@ -32,6 +32,14 @@ const digestText = {
   morning: { intro: "☀️ Buongiorno! Ecco cosa c'è da fare oggi", body: "In ritardo\n• Buttare l'umido · da 5h · 👤 Tu\n\nOggi\n• Lavatrice · entro le 21:00 · 👤 Anna\n\nSe vuoi fare altro oggi:\n• Pavimenti · entro dom 8\n• Pulire il bagno · entro mer 11 · 👤 Marco\n• Superfici cucina · entro gio 12" },
   evening: { intro: "🌙 Ecco cosa dovrai fare domani", body: "Domani\n• Pavimenti · entro le 14:00" },
 };
+// Scambi di turno in attesa: Anna chiede a te di scambiarvi "Buttare l'umido".
+type PreviewSwap = { id: number; taskId: number; taskName: string; requesterId: number; requesterName: string; targetId: number; targetName: string };
+let swaps: PreviewSwap[] = [
+  { id: 1, taskId: 1, taskName: "Buttare l'umido", requesterId: 2, requesterName: "Anna", targetId: 1, targetName: "Tu" },
+];
+// Rotazioni "a turno" cambiate dagli scambi accettati (il primo e' di turno).
+const rotations: Record<number, number[]> = { 1: [1, 2], 8: [2, 1, 3] };
+const names: Record<number, string> = { 1: "Tu", 2: "Anna", 3: "Marco" };
 // Spostamenti fatti dal centro di comando (/admin), per id attivita'.
 const shifts: Record<number, number> = {};
 const H = 3_600_000;
@@ -63,6 +71,7 @@ function buildData() {
     })),
     timezone: "Europe/Rome",
     absences,
+    swaps,
     insults: (["low", "medium", "high"] as const).map((severity) => ({
       severity,
       mine: insults[severity],
@@ -74,7 +83,8 @@ function buildData() {
       { id: 2, houseId: 1, userId: 3, userName: "Marco", taskId: 4, taskName: "Pulire il bagno", kind: "updated", detail: "assegnazione chiunque → personalizzata (2 turni)", restorable: false, createdAt: iso(-D) },
     ],
     tasks: ([
-      task(1, "Buttare l'umido", -5 * H, { assignMode: "alternate", assignUserIds: [1, 2], assigneeId: 1, assigneeName: "Tu", severity: "high" }),
+      task(1, "Buttare l'umido", -5 * H, { assignMode: "alternate", assignUserIds: rotations[1], assigneeId: rotations[1]![0], assigneeName: names[rotations[1]![0]!], severity: "high" }),
+      task(8, "Pulizia cucina", 1.4 * D, { assignMode: "alternate", assignUserIds: rotations[8], assigneeId: rotations[8]![0], assigneeName: names[rotations[8]![0]!] }),
       task(2, "Lavatrice", 9 * H, { assignMode: "single", assignUserIds: [2], assigneeId: 2, assigneeName: "Anna" }),
       task(3, "Pavimenti", 2.2 * D),
       task(4, "Pulire il bagno", 4.5 * D, {
@@ -146,6 +156,26 @@ createServer((req, res) => {
         for (const [kind, update] of Object.entries(parsed.digests ?? {})) {
           if (digests[kind]) digests[kind] = { ...digests[kind], ...update, intro: update.intro?.trim() || null };
         }
+        return res.end(JSON.stringify(buildData()));
+      }
+      const swapReq = url.match(/^\/api\/houses\/1\/tasks\/(\d+)\/swap$/);
+      const swapAct = url.match(/^\/api\/houses\/1\/swaps\/(\d+)\/(accept|reject|cancel)$/);
+      if (req.method === "POST" && swapReq) {
+        const taskId = Number(swapReq[1]);
+        const targetId = (JSON.parse(body || "{}") as { targetId?: number }).targetId ?? 0;
+        const taskName = taskId === 1 ? "Buttare l'umido" : "Pulizia cucina";
+        swaps.push({ id: Date.now(), taskId, taskName, requesterId: 1, requesterName: "Tu", targetId, targetName: names[targetId] ?? "?" });
+        return res.end(JSON.stringify(buildData()));
+      }
+      if (req.method === "POST" && swapAct) {
+        const swap = swaps.find((w) => w.id === Number(swapAct[1]));
+        if (swap && swapAct[2] === "accept") {
+          const ids = rotations[swap.taskId]!;
+          const a = ids.indexOf(swap.requesterId);
+          const b = ids.indexOf(swap.targetId);
+          [ids[a], ids[b]] = [ids[b]!, ids[a]!];
+        }
+        swaps = swaps.filter((w) => w.id !== Number(swapAct[1]));
         return res.end(JSON.stringify(buildData()));
       }
       if (req.method === "POST" && url === "/api/houses/1/tasks/shift") {

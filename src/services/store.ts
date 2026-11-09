@@ -1,6 +1,8 @@
 import type {
   Absence,
   AbsenceStatus,
+  TurnSwap,
+  TurnSwapStatus,
   MovedTask,
   AppUser,
   DigestKind,
@@ -313,6 +315,66 @@ export class HouseStore {
     }
 
     return { absence: (await this.getAbsence(houseId, absenceId)) as Absence, moved };
+  }
+
+  // ---- Scambi di turno ----
+
+  /** Richieste di scambio in attesa (quelle di attivita' eliminate non compaiono). */
+  async listPendingSwaps(houseId: number): Promise<TurnSwap[]> {
+    const rows = await this.db.all(`${swapSelect} WHERE w.house_id = ? AND w.status = 'pending' ORDER BY w.id`, [houseId]);
+    return rows.map(mapSwap);
+  }
+
+  async getSwap(houseId: number, swapId: number): Promise<TurnSwap | null> {
+    const row = await this.db.first(`${swapSelect} WHERE w.house_id = ? AND w.id = ?`, [houseId, swapId]);
+    return row ? mapSwap(row) : null;
+  }
+
+  async createSwap(houseId: number, taskId: number, requesterId: number, targetId: number, now: Date = new Date()): Promise<TurnSwap> {
+    const result = await this.db.run(
+      "INSERT INTO turn_swaps (house_id, task_id, requester_id, target_id, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+      [houseId, taskId, requesterId, targetId, now.toISOString()],
+    );
+    return (await this.getSwap(houseId, result.lastRowId)) as TurnSwap;
+  }
+
+  async setSwapMessage(swapId: number, messageId: number): Promise<void> {
+    await this.db.run("UPDATE turn_swaps SET message_id = ? WHERE id = ?", [messageId, swapId]);
+  }
+
+  /** Chiude una richiesta ancora in attesa; false se nel frattempo era gia' stata chiusa. */
+  async resolveSwap(houseId: number, swapId: number, status: Exclude<TurnSwapStatus, "pending">, now: Date = new Date()): Promise<boolean> {
+    const result = await this.db.run(
+      "UPDATE turn_swaps SET status = ?, resolved_at = ? WHERE house_id = ? AND id = ? AND status = 'pending'",
+      [status, now.toISOString(), houseId, swapId],
+    );
+    return result.changes > 0;
+  }
+
+  /**
+   * Inverte le posizioni di due coinquilini nella rotazione di un'attivita' "a turno", senza toccare il
+   * contatore del turno: se toccava a uno dei due, ora tocca all'altro. null se non e' (piu') possibile.
+   */
+  async swapRotation(houseId: number, taskId: number, userA: number, userB: number, actorId: number, now: Date = new Date()): Promise<Task | null> {
+    const task = await this.getTask(houseId, taskId);
+    if (!task || task.assignMode !== "alternate") {
+      return null;
+    }
+    const ids = task.assignUserIds.slice();
+    const a = ids.indexOf(userA);
+    const b = ids.indexOf(userB);
+    if (a < 0 || b < 0 || a === b) {
+      return null;
+    }
+    [ids[a], ids[b]] = [ids[b] as number, ids[a] as number];
+    await this.db.run(
+      `UPDATE tasks SET assign_users = ?, reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL, updated_at = ?
+       WHERE id = ?`,
+      [JSON.stringify(ids), now.toISOString(), taskId],
+    );
+    const names = await Promise.all([userA, userB].map(async (id) => (await this.getUserById(id))?.displayName ?? "?"));
+    await this.addLog(houseId, actorId, taskId, task.name, "updated", `turno scambiato: ${names[0]} ↔ ${names[1]}`, now);
+    return this.getTask(houseId, taskId);
   }
 
   /**
@@ -880,6 +942,30 @@ export const sessionTtlSeconds = sessionTtlMs / 1000;
 
 export function awayKey(houseId: number, userId: number): string {
   return `${houseId}:${userId}`;
+}
+
+const swapSelect = `
+  SELECT w.*, t.name AS task_name, r.display_name AS requester_name, g.display_name AS target_name
+  FROM turn_swaps w
+  JOIN tasks t ON t.id = w.task_id
+  JOIN users r ON r.id = w.requester_id
+  JOIN users g ON g.id = w.target_id
+`;
+
+function mapSwap(row: SqlRow): TurnSwap {
+  return {
+    id: Number(row.id),
+    houseId: Number(row.house_id),
+    taskId: Number(row.task_id),
+    taskName: String(row.task_name),
+    requesterId: Number(row.requester_id),
+    requesterName: String(row.requester_name),
+    targetId: Number(row.target_id),
+    targetName: String(row.target_name),
+    status: String(row.status) as TurnSwapStatus,
+    createdAt: String(row.created_at),
+    messageId: row.message_id === null || row.message_id === undefined ? null : Number(row.message_id),
+  };
 }
 
 const absenceSelect = `

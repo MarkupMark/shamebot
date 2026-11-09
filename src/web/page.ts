@@ -150,6 +150,15 @@ const PAGE_TEMPLATE = `<!doctype html>
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .chip { border-radius: 99px; padding: 5px 12px; font-size: .85rem; }
   .chip.on { background: var(--accent); color: var(--accent-text); border-color: transparent; }
+  ol.turns { list-style: none; margin: 10px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  ol.turns li { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 10px; border-bottom: 1px solid var(--line); font-size: .92rem; }
+  ol.turns li:last-child { border-bottom: 0; }
+  ol.turns li small { color: var(--accent); font-size: .75rem; font-weight: 600; margin-left: 6px; }
+  ol.turns .turn-n { width: 22px; height: 22px; border-radius: 50%; background: var(--bg); color: var(--muted); font-size: .75rem; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  ol.turns li:first-child .turn-n { background: var(--accent); color: var(--accent-text); font-weight: 700; }
+  ol.turns button { padding: 4px 10px; }
+  .swap-pick { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .swap-note { font-size: .8rem; margin-top: 6px; }
   .slot { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 10px; margin-top: 8px; }
   .slot select, .slot input { width: 100%; min-width: 0; }
   .slot .slot-foot { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; font-size: .78rem; color: var(--muted); }
@@ -164,7 +173,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   var savedRange = null, savedOrder = null;
   try { savedRange = localStorage.getItem("tlRange"); savedOrder = localStorage.getItem("taskOrder"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", order: savedOrder === "mine" || savedOrder === "mineany" ? savedOrder : "all", tlExpanded: false, digestDraft: {}, insultDraft: {}, insultSev: "high" };
+    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", order: savedOrder === "mine" || savedOrder === "mineany" ? savedOrder : "all", tlExpanded: false, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -453,13 +462,20 @@ const PAGE_TEMPLATE = `<!doctype html>
     return "Dal " + new Date(w.startsAt).toLocaleDateString("it-IT", fmt) + " al " + lastDay.toLocaleDateString("it-IT", fmt);
   }
 
+  /** Rotazione "a turno" a partire da chi e' di turno ora (cosi' nell'editor il primo e' sempre quello attuale). */
+  function currentFirst(task) {
+    var ids = task.assignUserIds.slice();
+    var at = ids.indexOf(task.assigneeId);
+    return at > 0 ? ids.slice(at).concat(ids.slice(0, at)) : ids;
+  }
+
   /** Editor dell'assegnazione: restituisce { el, value() } dove value() da' il payload per l'API. */
   function assignmentEditor(task) {
     var members = state.data.members;
     var a = {
       mode: task ? task.assignMode : "anyone",
       single: task && task.assignMode === "single" ? task.assignUserIds[0] : (members[0] ? members[0].id : null),
-      rotation: task && task.assignMode === "alternate" ? task.assignUserIds.slice() : members.map(function (m) { return m.id; }),
+      rotation: task && task.assignMode === "alternate" ? currentFirst(task) : members.map(function (m) { return m.id; }),
       slots: task && task.slots ? task.slots.map(function (s) { return { userId: s.userId, kind: s.kind, date: toDateInput(s.startsAt) }; }) : []
     };
     if (a.mode === "custom" && !a.slots.length) a.slots.push({ userId: state.data.viewerId, kind: "week", date: toDateInput(Date.now()) });
@@ -489,7 +505,19 @@ const PAGE_TEMPLATE = `<!doctype html>
           body.appendChild(h("button", { type: "button", class: "chip" + (a.single === m.id ? " on" : ""), onclick: function () { a.single = m.id; draw(); } }, m.displayName));
         });
       } else if (a.mode === "alternate") {
-        var order = a.rotation.map(memberName);
+        var moveTo = function (from, to) {
+          var id = a.rotation.splice(from, 1)[0];
+          a.rotation.splice(to, 0, id);
+          draw();
+        };
+        var list = h("ol", { class: "turns" }, a.rotation.map(function (id, i) {
+          var last = i === a.rotation.length - 1;
+          return h("li", {},
+            h("span", { class: "turn-n" }, String(i + 1)),
+            h("span", { class: "grow" }, memberName(id), i === 0 ? h("small", {}, task ? "di turno ora" : "inizia") : null),
+            h("button", { type: "button", class: "icon ghost", title: "Prima", "aria-label": "Sposta prima", disabled: i === 0, onclick: function () { moveTo(i, i - 1); } }, "↑"),
+            h("button", { type: "button", class: "icon ghost", title: "Dopo", "aria-label": "Sposta dopo", disabled: last, onclick: function () { moveTo(i, i + 1); } }, "↓"));
+        }));
         body = h("div", {},
           h("div", { class: "chips" }, members.map(function (m) {
             var on = a.rotation.indexOf(m.id) >= 0;
@@ -498,8 +526,12 @@ const PAGE_TEMPLATE = `<!doctype html>
               draw();
             } }, m.displayName);
           })),
-          h("div", { class: "muted", style: "margin-top:6px;font-size:.8rem" },
-            a.rotation.length >= 2 ? "Ordine: " + order.join(" → ") + " → di nuovo " + order[0] : "Scegli almeno due persone.")
+          a.rotation.length >= 2 ? h("div", {},
+            list,
+            h("div", { class: "row", style: "margin-top:6px" },
+              h("div", { class: "grow muted", style: "font-size:.8rem" }, "Dopo l'ultimo si ricomincia dal primo."),
+              h("button", { type: "button", class: "chip", onclick: function () { a.rotation.reverse(); draw(); } }, "⇅ Inverti ordine"))
+          ) : h("div", { class: "muted", style: "margin-top:6px;font-size:.8rem" }, "Scegli almeno due persone.")
         );
       } else if (a.mode === "custom") {
         body = h("div", {});
@@ -534,7 +566,11 @@ const PAGE_TEMPLATE = `<!doctype html>
       el: wrap,
       value: function () {
         if (a.mode === "single") return { mode: "single", userIds: a.single ? [a.single] : [] };
-        if (a.mode === "alternate") return { mode: "alternate", userIds: a.rotation };
+        if (a.mode === "alternate") {
+          // Ordine non toccato: rimanda la rotazione salvata cosi' il turno attuale non si azzera.
+          var same = task && task.assignMode === "alternate" && a.rotation.join(",") === currentFirst(task).join(",");
+          return { mode: "alternate", userIds: same ? task.assignUserIds : a.rotation };
+        }
         if (a.mode === "custom") return { mode: "custom", slots: a.slots.filter(function (s) { return s.date; }).map(function (s) {
           var w = slotWindow(s.date, s.kind);
           return { userId: s.userId, kind: s.kind, startsAt: w.startsAt, dueAt: w.dueAt };
@@ -607,7 +643,12 @@ const PAGE_TEMPLATE = `<!doctype html>
       api("DELETE", "/api/houses/" + state.houseId + "/tasks/" + task.id + "?notify=" + notify).then(loadHouse).catch(fail);
     }
     var extra = [task.frequency];
-    if (task.assignMode === "alternate") extra.push("a turno");
+    if (task.assignMode === "alternate") {
+      var turns = currentFirst(task);
+      extra.push(turns.length > 1 ? "a turno, poi " + (turns[1] === state.data.viewerId ? "tu" : memberName(turns[1])) : "a turno");
+    }
+    var pendingSwap = (state.data.swaps || []).filter(function (w) { return w.taskId === task.id; })[0];
+    var canSwap = task.assignMode === "alternate" && !pendingSwap && task.assignUserIds.indexOf(state.data.viewerId) >= 0 && task.assignUserIds.length > 1;
     if (task.assignMode === "custom" && task.slots.length > 1) extra.push("poi " + task.slots[1].userName);
     return h("div", { class: "card task" },
       h("div", { class: "row tight" },
@@ -621,10 +662,71 @@ const PAGE_TEMPLATE = `<!doctype html>
       h("div", { class: "row tight task-foot" },
         h("div", { class: "grow " + due.cls }, due.text),
         h("button", { class: "primary", onclick: done }, "Fatto"),
+        canSwap ? h("button", { class: "icon", title: "Scambia turno", "aria-label": "Chiedi di scambiare il turno", onclick: function () { askSwap(task); } }, "🔄") : null,
         h("button", { class: "icon", title: "Modifica", "aria-label": "Modifica", onclick: function () { state.editing = task.id; state.adding = false; render(); } }, "✏️"),
         h("button", { class: "icon danger ghost", title: "Elimina", "aria-label": "Elimina", onclick: remove }, "🗑")
-      )
+      ),
+      state.swapPicking === task.id ? swapPicker(task) : null,
+      pendingSwap ? h("div", { class: "muted swap-note" }, "🔄 Scambio in attesa: " + pendingSwap.requesterName + " ↔ " + pendingSwap.targetName) : null
     );
+  }
+
+  // ---------- Scambi di turno ----------
+  /** "a Luca" ma "ad Anna". */
+  function toName(name) { return (name.charAt(0).toLowerCase() === "a" ? "ad " : "a ") + name; }
+  function swapAction(path) {
+    api("POST", "/api/houses/" + state.houseId + path).then(function (data) { state.data = data; state.error = ""; state.swapPicking = null; render(); }).catch(fail);
+  }
+
+  function sendSwap(task, targetId) {
+    api("POST", "/api/houses/" + state.houseId + "/tasks/" + task.id + "/swap", { targetId: targetId })
+      .then(function (data) { state.data = data; state.error = ""; state.swapPicking = null; render(); }).catch(fail);
+  }
+
+  /** Con due persone in rotazione chiede subito all'altra; con di piu' mostra la scelta sotto la card. */
+  function askSwap(task) {
+    var others = task.assignUserIds.filter(function (id) { return id !== state.data.viewerId; });
+    if (others.length === 1) {
+      if (confirm("Chiedere " + toName(memberName(others[0])) + " di scambiarvi il turno di «" + task.name + "»?")) sendSwap(task, others[0]);
+      return;
+    }
+    state.swapPicking = state.swapPicking === task.id ? null : task.id;
+    render();
+  }
+
+  function swapPicker(task) {
+    var others = task.assignUserIds.filter(function (id) { return id !== state.data.viewerId; });
+    return h("div", { class: "swap-pick" },
+      h("div", { class: "muted", style: "font-size:.85rem" }, "Con chi vuoi scambiare il turno?"),
+      h("div", { class: "chips" },
+        others.map(function (id) { return h("button", { class: "chip", onclick: function () { sendSwap(task, id); } }, memberName(id)); }),
+        h("button", { class: "chip ghost", onclick: function () { state.swapPicking = null; render(); } }, "Annulla")));
+  }
+
+  /** Banner in alto: richieste di scambio di turno in attesa (rispondi, annulla o solo informativo). */
+  function viewSwaps() {
+    var list = state.data.swaps || [];
+    if (!list.length) return null;
+    var me = state.data.viewerId;
+    return h("div", {}, list.map(function (w) {
+      var base = "/swaps/" + w.id;
+      if (w.targetId === me) {
+        return h("div", { class: "away pending" },
+          h("div", { class: "grow" }, "🔄 " + w.requesterName + " ti chiede di scambiarvi il turno",
+            h("small", {}, "«" + w.taskName + "»: se accetti vi invertite nella rotazione.")),
+          h("button", { class: "ghost", onclick: function () { swapAction(base + "/reject"); } }, "Rifiuto"),
+          h("button", { class: "primary", onclick: function () { swapAction(base + "/accept"); } }, "✅ Accetto"));
+      }
+      if (w.requesterId === me) {
+        return h("div", { class: "away" },
+          h("div", { class: "grow" }, "🔄 Hai chiesto " + toName(w.targetName) + " di scambiarvi il turno",
+            h("small", {}, "«" + w.taskName + "» · in attesa della risposta")),
+          h("button", { class: "ghost", onclick: function () { swapAction(base + "/cancel"); } }, "Annulla"));
+      }
+      return h("div", { class: "away" },
+        h("div", { class: "grow" }, "🔄 " + w.requesterName + " ha chiesto " + toName(w.targetName) + " di scambiarsi il turno",
+          h("small", {}, "«" + w.taskName + "» · in attesa della risposta")));
+    }));
   }
 
   // ---------- Viste ----------
@@ -982,7 +1084,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       onclick: function () { state.tab = "log"; render(); } }, "🧾", h("span", { class: "lbl" }, " Registro")));
 
     var view = state.tab === "members" ? viewMembers() : state.tab === "messages" ? viewMessages() : state.tab === "log" ? viewLog() : viewTasks();
-    var parts = [header, viewAbsences(), viewTimeline(), tabs, state.error ? h("p", { class: "error" }, state.error) : null, view].filter(Boolean);
+    var parts = [header, viewAbsences(), viewSwaps(), viewTimeline(), tabs, state.error ? h("p", { class: "error" }, state.error) : null, view].filter(Boolean);
     root.replaceChildren.apply(root, parts);
   }
 

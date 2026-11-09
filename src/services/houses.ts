@@ -1,4 +1,4 @@
-import type { Absence, AppUser, House, MovedTask, Task, TaskSeverity } from "../types/domain.js";
+import type { Absence, AppUser, House, MovedTask, Task, TaskSeverity, TurnSwap } from "../types/domain.js";
 import type { AssignmentInput, HouseStore, TaskUpdateInput } from "./store.js";
 import {
   awayApprovedMessage,
@@ -6,6 +6,10 @@ import {
   awayRequestedMessage,
   sendAndGetId,
   safeSend,
+  swapAcceptedMessage,
+  swapRejectedMessage,
+  swapRequestedMessage,
+  toName,
   taskCompletedMessage,
   taskCreatedMessage,
   taskDeletedMessage,
@@ -19,6 +23,9 @@ export type EditInChat = (chatId: number, messageId: number, text: string) => Pr
 
 /** Errore "di regola" sulle assenze, da mostrare cosi' com'e' all'utente. */
 export class AbsenceError extends Error {}
+
+/** Errore "di regola" sugli scambi di turno, da mostrare cosi' com'e' all'utente. */
+export class SwapError extends Error {}
 
 export type ChangeOptions = {
   /** Se true/false forza l'avviso al gruppo; se omesso vale l'impostazione della casa. */
@@ -93,6 +100,91 @@ export class HouseService {
     const by = result.absence.userId === actor.id ? null : actor.displayName;
     await safeSend(this.send, house.chatId, awayEndedMessage(result.absence.userName, by, result.moved, now));
     return result;
+  }
+
+  // ---- Scambi di turno ----
+
+  /** Chiede a un altro coinquilino della rotazione di invertire i turni; nel gruppo compaiono Accetto / Rifiuto. */
+  async requestSwap(house: House, actor: AppUser, taskId: number, targetId: number): Promise<TurnSwap> {
+    const task = await this.store.getTask(house.id, taskId);
+    if (!task || task.assignMode !== "alternate") {
+      throw new SwapError("Si puo' scambiare il turno solo nelle attivita' a turno.");
+    }
+    if (!task.assignUserIds.includes(actor.id)) {
+      throw new SwapError("Non sei nella rotazione di questa attivita'.");
+    }
+    if (targetId === actor.id || !task.assignUserIds.includes(targetId)) {
+      throw new SwapError("Scegli un altro coinquilino della rotazione.");
+    }
+    if ((await this.store.listPendingSwaps(house.id)).some((swap) => swap.taskId === taskId)) {
+      throw new SwapError("C'e' gia' una richiesta di scambio in attesa per questa attivita'.");
+    }
+
+    const swap = await this.store.createSwap(house.id, taskId, actor.id, targetId);
+    const nowTurn = task.assigneeId === actor.id ? swap.targetName : task.assigneeId === targetId ? actor.displayName : null;
+    const effect = nowTurn ? `Se accetta, questo turno tocca ${toName(nowTurn)}.` : null;
+    const messageId = await sendAndGetId(this.send, house.chatId, swapRequestedMessage(actor.displayName, swap.targetName, task.name, effect), [
+      [
+        { text: "✅ Accetto", data: `swap:${swap.id}:yes` },
+        { text: "❌ Rifiuto", data: `swap:${swap.id}:no` },
+      ],
+    ]);
+    if (typeof messageId === "number") {
+      await this.store.setSwapMessage(swap.id, messageId);
+    }
+    return swap;
+  }
+
+  /** Risposta di chi ha ricevuto la richiesta: se accetta, i due si invertono nella rotazione. */
+  async answerSwap(house: House, actor: AppUser, swapId: number, accept: boolean): Promise<Task | null> {
+    const swap = await this.store.getSwap(house.id, swapId);
+    if (!swap || swap.status !== "pending") {
+      throw new SwapError("Richiesta non trovata o gia' chiusa.");
+    }
+    if (swap.targetId !== actor.id) {
+      throw new SwapError(`Puo' rispondere solo ${swap.targetName}.`);
+    }
+
+    let task: Task | null = null;
+    let text: string;
+    if (accept) {
+      task = await this.store.swapRotation(house.id, swap.taskId, swap.requesterId, swap.targetId, actor.id);
+      if (!task) {
+        await this.store.resolveSwap(house.id, swapId, "cancelled");
+        await this.editOrSend(house.chatId, swap.messageId, `🔄 Scambio di "${swap.taskName}" annullato: la rotazione è cambiata`);
+        throw new SwapError("La rotazione e' cambiata nel frattempo: richiesta annullata.");
+      }
+      text = swapAcceptedMessage(actor.displayName, task.name, task.assigneeName);
+    } else {
+      text = swapRejectedMessage(actor.displayName, swap.taskName);
+    }
+    if (!(await this.store.resolveSwap(house.id, swapId, accept ? "accepted" : "rejected"))) {
+      throw new SwapError("Richiesta gia' chiusa.");
+    }
+    await this.editOrSend(house.chatId, swap.messageId, text);
+    return task;
+  }
+
+  /** Annulla una richiesta di scambio ancora in attesa (solo chi l'ha fatta). */
+  async cancelSwap(house: House, actor: AppUser, swapId: number): Promise<void> {
+    const swap = await this.store.getSwap(house.id, swapId);
+    if (!swap || swap.status !== "pending") {
+      throw new SwapError("Richiesta non trovata o gia' chiusa.");
+    }
+    if (swap.requesterId !== actor.id) {
+      throw new SwapError("Puo' annullarla solo chi l'ha fatta.");
+    }
+    await this.store.resolveSwap(house.id, swapId, "cancelled");
+    if (swap.messageId !== null) {
+      await this.tryEdit(house.chatId, swap.messageId, `🔄 ${swap.requesterName}: richiesta di scambio annullata`);
+    }
+  }
+
+  private async editOrSend(chatId: number, messageId: number | null, text: string): Promise<void> {
+    const edited = messageId !== null && (await this.tryEdit(chatId, messageId, text));
+    if (!edited) {
+      await safeSend(this.send, chatId, text);
+    }
   }
 
   private async tryEdit(chatId: number, messageId: number, text: string): Promise<boolean> {

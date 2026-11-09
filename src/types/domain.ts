@@ -140,6 +140,23 @@ export type Absence = {
   messageId: number | null;
 };
 
+export type TurnSwapStatus = "pending" | "accepted" | "rejected" | "cancelled";
+
+/** Richiesta di scambio di turno su un'attivita' "a turno": `target` accetta o rifiuta. */
+export type TurnSwap = {
+  id: number;
+  houseId: number;
+  taskId: number;
+  taskName: string;
+  requesterId: number;
+  requesterName: string;
+  targetId: number;
+  targetName: string;
+  status: TurnSwapStatus;
+  createdAt: string;
+  messageId: number | null;
+};
+
 /** Scadenza spostata al rientro: `overdue` = era scaduta durante l'assenza e va fatta il giorno del rientro. */
 export type MovedTask = {
   task: Task;

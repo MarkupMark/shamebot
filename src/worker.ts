@@ -13,7 +13,7 @@ import { defaultInsults, maxInsultLength, maxInsultsPerSeverity } from "./servic
 import { getDueAt } from "./services/policy.js";
 import { verifyTelegramMiniAppInitData } from "./services/web-auth.js";
 import { renderAppPage } from "./web/page.js";
-import { AbsenceError } from "./services/houses.js";
+import { AbsenceError, SwapError } from "./services/houses.js";
 import { renderContributePage } from "./web/contribute.js";
 import { renderAdminPage } from "./web/admin.js";
 import { formatFrequency, parseDurationInput } from "./utils/duration.js";
@@ -346,6 +346,34 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
     return jsonResponse(await buildHousePayload(store, house, user, timezoneOf(env)));
   }
 
+  // Scambi di turno: richiesta (POST tasks/:id/swap { targetId }), risposta e annullamento.
+  const swapRequest = rest.match(/^tasks\/(\d+)\/swap$/);
+  const swapAction = rest.match(/^swaps\/(\d+)\/(accept|reject|cancel)$/);
+  if (swapRequest || swapAction) {
+    if (method !== "POST") {
+      return methodNotAllowed(["POST"]);
+    }
+    try {
+      if (swapRequest) {
+        const body = await readJsonObject(request);
+        if (typeof body.targetId !== "number" || !Number.isInteger(body.targetId)) {
+          throw new HttpError(400, "Scegli con chi scambiare il turno.");
+        }
+        await service.requestSwap(house, user, Number(swapRequest[1]), body.targetId);
+      } else if (swapAction![2] === "cancel") {
+        await service.cancelSwap(house, user, Number(swapAction![1]));
+      } else {
+        await service.answerSwap(house, user, Number(swapAction![1]), swapAction![2] === "accept");
+      }
+    } catch (error) {
+      if (error instanceof SwapError) {
+        throw new HttpError(409, error.message);
+      }
+      throw error;
+    }
+    return jsonResponse(await buildHousePayload(store, house, user, timezoneOf(env)));
+  }
+
   const restoreMatch = rest.match(/^log\/(\d+)\/restore$/);
   if (restoreMatch) {
     if (method !== "POST") {
@@ -406,7 +434,7 @@ function timezoneOf(env: WorkerEnv): string {
 
 async function buildHousePayload(store: HouseStore, house: House, viewer: AppUser, timezone: string) {
   const now = new Date();
-  const [tasks, members, log, slots, digests, myInsults, insultCounts, absences] = await Promise.all([
+  const [tasks, members, log, slots, digests, myInsults, insultCounts, absences, swaps] = await Promise.all([
     store.listTasks(house.id),
     store.listMembers(house.id),
     store.listLog(house.id, 50),
@@ -415,6 +443,7 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
     store.listMyInsults(house.id, viewer.id),
     store.countInsults(house.id),
     store.listOpenAbsences(house.id),
+    store.listPendingSwaps(house.id),
   ]);
   const away = new Set(absences.filter((absence) => absence.status === "active").map((absence) => absence.userId));
 
@@ -451,6 +480,15 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
       status: absence.status,
       startsAt: absence.startsAt,
       approvedByName: absence.approvedByName,
+    })),
+    swaps: swaps.map((swap) => ({
+      id: swap.id,
+      taskId: swap.taskId,
+      taskName: swap.taskName,
+      requesterId: swap.requesterId,
+      requesterName: swap.requesterName,
+      targetId: swap.targetId,
+      targetName: swap.targetName,
     })),
     members: members.map((member) => ({ id: member.userId, displayName: member.displayName, username: member.username })),
     log,
