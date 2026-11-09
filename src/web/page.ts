@@ -229,9 +229,26 @@ const PAGE_TEMPLATE = `<!doctype html>
     api("POST", "/auth/telegram/request").then(function (res) {
       var url = res.request.botUrl;
       if (popup) popup.location = url; else window.location.href = url;
-      renderLogin("Conferma il login nel bot, poi torna qui...");
+      renderLoginWaiting(url);
       pollLogin(res.request.token, 0);
     }).catch(function (err) { renderLogin(err.message); });
+  }
+
+  function renderLoginWaiting(url) {
+    root.replaceChildren(
+      h("h1", {}, "ShameBot"),
+      h("p", { class: "muted" }, "Le faccende di casa, tra coinquilini."),
+      h("div", { class: "card" },
+        h("p", {}, "Conferma l'accesso su Telegram:"),
+        h("ol", {},
+          h("li", {}, "Apri la chat con il bot (si apre da sola, altrimenti usa il bottone qui sotto)"),
+          h("li", {}, "Premi AVVIA / START in fondo alla chat"),
+          h("li", {}, "Quando il bot risponde «Login approvato» torna qui: entri da solo")
+        ),
+        h("button", { class: "primary", onclick: function () { window.open(url, "_blank"); } }, "Apri il bot"),
+        h("p", { class: "muted" }, "In attesa della conferma...")
+      )
+    );
   }
 
   function pollLogin(token, attempts) {
