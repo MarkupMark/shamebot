@@ -867,7 +867,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   // ---------- Promemoria giornalieri ----------
   var DIGEST_TITLES = { morning: "☀️ Buongiorno", evening: "🌙 Riepilogo serale" };
   var DIGEST_HINTS = {
-    morning: "Cosa e' in ritardo e cosa scade oggi, piu' le prossime 3 attivita' se vuoi portarti avanti.",
+    morning: "Cosa e' in ritardo e cosa scade oggi o domani, piu' le prossime 3 attivita' se vuoi portarti avanti.",
     evening: "Cosa dovrai fare domani."
   };
   var NL2 = String.fromCharCode(10) + String.fromCharCode(10);

@@ -33,8 +33,8 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   medie e importanti: li vede solo lui. Quando un'attivita' scade, e al sollecito, il bot ne aggiunge uno a caso tra
   quelli scritti dagli **altri**, mai da chi lo riceve. Se nessuno ne ha scritti usa quelli predefiniti.
   `{nome}` diventa chi la doveva fare («ragazzi» se tocca a chiunque), `{attivita}` il nome dell'attivita'.
-- **Promemoria giornalieri.** ☀️ *Buongiorno* (cosa e' in ritardo e cosa scade oggi, poi "se vuoi fare altro
-  oggi" con le prossime 3 attivita' in scadenza; predefinito alle 9:00, attivo) e 🌙 *Riepilogo serale* (cosa dovrai fare
+- **Promemoria giornalieri.** ☀️ *Buongiorno* (cosa e' in ritardo, cosa scade oggi e cosa scade domani, poi
+  "se vuoi fare altro oggi" con le prossime 3 attivita' in scadenza; predefinito alle 9:00, attivo) e 🌙 *Riepilogo serale* (cosa dovrai fare
   domani; predefinito alle 21:00, spento). Dalla scheda Messaggi del portale si accendono, si sceglie l'ora e si personalizza
   la frase iniziale: l'elenco sotto e' sempre automatico. Partono una volta al giorno e, se non c'e' niente da segnalare,
   di default non partono.

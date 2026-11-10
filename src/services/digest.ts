@@ -81,8 +81,8 @@ function dayLabel(at: Date, timezone: string): string {
 }
 
 /**
- * Buongiorno: cosa e' in ritardo e cosa scade oggi, poi "se vuoi fare altro oggi" con le prossime 3
- * attivita' in scadenza dopo oggi (in qualunque giorno).
+ * Buongiorno: cosa e' in ritardo, cosa scade oggi e cosa scade domani (cosi' chi ha una scadenza domani
+ * presto lo sa con un giorno di anticipo), poi "se vuoi fare altro oggi" con le prossime 3 attivita' dopo domani.
  * Serale: cosa dovrai fare domani (attivita' in scadenza domani).
  */
 export function buildDigest(
@@ -103,28 +103,23 @@ export function buildDigest(
   if (kind === "morning") {
     const late = sorted.filter((task) => getDueAt(task) < now);
     const today = sorted.filter((task) => getDueAt(task) >= now && getDueAt(task) < endOfToday);
-    const later = sorted.filter((task) => getDueAt(task) >= endOfToday).slice(0, morningSuggestions);
+    const tomorrow = sorted.filter((task) => getDueAt(task) >= endOfToday && getDueAt(task) < endOfTomorrow);
+    const later = sorted.filter((task) => getDueAt(task) >= endOfTomorrow).slice(0, morningSuggestions);
     if (late.length) {
       sections.push(["In ritardo", ...late.map((t) => `• ${t.name} · da ${formatShortDuration(now.getTime() - getDueAt(t).getTime())}${who(t)}`)].join("\n"));
     }
     if (today.length) {
       sections.push(["Oggi", ...today.map((t) => `• ${t.name} · entro le ${clock(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
     }
+    if (tomorrow.length) {
+      sections.push(["Domani", ...tomorrow.map((t) => `• ${t.name} · entro le ${clock(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
+    }
     empty = sections.length === 0;
     if (empty) {
-      sections.push("Oggi niente in scadenza 🎉");
+      sections.push("Oggi e domani niente in scadenza 🎉");
     }
     if (later.length) {
-      sections.push(
-        [
-          "Se vuoi fare altro oggi:",
-          ...later.map((t) => {
-            const due = getDueAt(t);
-            const when = due < endOfTomorrow ? `domani entro le ${clock(due, timezone)}` : `entro ${dayLabel(due, timezone)}`;
-            return `• ${t.name} · ${when}${who(t)}`;
-          }),
-        ].join("\n"),
-      );
+      sections.push(["Se vuoi fare altro oggi:", ...later.map((t) => `• ${t.name} · entro ${dayLabel(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
     }
   } else {
     const tomorrow = sorted.filter((task) => getDueAt(task) >= endOfToday && getDueAt(task) < endOfTomorrow);
