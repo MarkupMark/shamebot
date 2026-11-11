@@ -22,7 +22,7 @@ import type {
 } from "../types/domain.js";
 import type { Db, SqlParam, SqlRow } from "./db.js";
 import { describeTaskChanges } from "../utils/tasks.js";
-import { getDueAt } from "./policy.js";
+import { buildNoticeStages, getDueAt } from "./policy.js";
 import { endOfLocalDay } from "./digest.js";
 
 export type TelegramIdentity = {
@@ -678,8 +678,21 @@ export class HouseStore {
     return row ? mapTask(row) : null;
   }
 
-  /** Modifica un'attivita'. Se cambia la frequenza i promemoria del ciclo corrente vengono ricalcolati. */
-  async updateTask(houseId: number, taskId: number, userId: number, updates: TaskUpdateInput): Promise<TaskUpdateResult | null> {
+  /**
+   * Modifica un'attivita'. Una modifica non deve mai far scattare un ritardo (e quindi un insulto):
+   * - se si accorcia la frequenza la scadenza diventa la piu' vicina tra la vecchia e "adesso + nuova frequenza",
+   *   cosi' nessuno risulta in ritardo per un ciclo che non conosceva; se si allunga resta "ultimo Fatto + frequenza";
+   * - un'attivita' gia' in ritardo prima della modifica tiene la sua scadenza (il ritardo non si cancella ne' si ripete);
+   * - gli avvisi gia' inviati restano inviati, quelli spostati nel futuro ripartono, e quelli che la modifica
+   *   porterebbe nel passato vengono segnati come gestiti invece di partire subito.
+   */
+  async updateTask(
+    houseId: number,
+    taskId: number,
+    userId: number,
+    updates: TaskUpdateInput,
+    now: Date = new Date(),
+  ): Promise<TaskUpdateResult | null> {
     const before = await this.getTask(houseId, taskId);
     if (!before) {
       return null;
@@ -703,15 +716,32 @@ export class HouseStore {
     }
 
     if (changes.length > 0) {
+      const current = (await this.getTask(houseId, taskId)) as Task;
+      const edited = { ...current, name, intervalMs, severity, cycleAnchorAt: before.cycleAnchorAt };
+      const cycleAnchorAt = rescheduleAnchor(before, edited, now);
+      const after = { ...edited, cycleAnchorAt };
+      const flags = rescheduleNoticeFlags(before, after, now);
       await this.db.run(
         `UPDATE tasks
-         SET name = ?, interval_ms = ?, severity = ?, updated_at = ?,
-             reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL,
-             overdue_notice_sent_at = NULL, nudge_sent_at = NULL
+         SET name = ?, interval_ms = ?, severity = ?, cycle_anchor_at = ?, updated_at = ?,
+             reminder_three_hours_sent_at = ?, reminder_thirty_minutes_sent_at = ?,
+             overdue_notice_sent_at = ?, nudge_sent_at = ?
          WHERE id = ? AND house_id = ?`,
-        [name, intervalMs, severity, new Date().toISOString(), taskId, houseId],
+        [
+          name,
+          intervalMs,
+          severity,
+          cycleAnchorAt,
+          now.toISOString(),
+          flags.three_hours,
+          flags.thirty_minutes,
+          flags.overdue,
+          flags.nudge,
+          taskId,
+          houseId,
+        ],
       );
-      await this.addLog(houseId, userId, taskId, name, "updated", changes.join("; "));
+      await this.addLog(houseId, userId, taskId, name, "updated", changes.join("; "), now);
     }
 
     return { before, task: (await this.getTask(houseId, taskId)) as Task, changes };
@@ -1115,3 +1145,49 @@ function nullableString(value: unknown): string | null {
 }
 
 export type { SqlParam };
+
+/**
+ * Nuovo inizio del ciclo dopo una modifica (vedi HouseStore.updateTask). `after` e' l'attivita' gia' modificata
+ * ma con il vecchio cycle_anchor_at. Con un turno personalizzato aperto la scadenza e' quella del turno.
+ */
+function rescheduleAnchor(before: Task, after: Task, now: Date): string {
+  if (after.slotDueAt) {
+    return before.cycleAnchorAt;
+  }
+  const oldDue = getDueAt(before).getTime();
+  const naiveDue = getDueAt(after).getTime();
+  let newDue: number;
+  if (naiveDue === oldDue || naiveDue > oldDue) {
+    newDue = naiveDue; // stessa scadenza o piu' tardi: nessun problema
+  } else if (oldDue <= now.getTime()) {
+    newDue = oldDue; // gia' in ritardo: il ritardo resta quello che era
+  } else {
+    // Scadenza anticipata: al massimo un ciclo intero da adesso, mai oltre la vecchia scadenza.
+    newDue = Math.min(oldDue, Math.max(naiveDue, now.getTime() + after.intervalMs));
+  }
+  return new Date(newDue - after.intervalMs).toISOString();
+}
+
+type NoticeFlags = Record<NoticeStageKey, string | null>;
+
+/** Stato degli avvisi dopo una modifica: nessun avviso deve partire solo perche' l'attivita' e' stata modificata. */
+function rescheduleNoticeFlags(before: Task, after: Task, now: Date): NoticeFlags {
+  const sent: NoticeFlags = {
+    three_hours: before.reminderThreeHoursSentAt,
+    thirty_minutes: before.reminderThirtyMinutesSentAt,
+    overdue: before.overdueNoticeSentAt,
+    nudge: before.nudgeSentAt,
+  };
+  const oldAt = new Map(buildNoticeStages(before).map((stage) => [stage.key, stage.at.getTime()]));
+  const result: NoticeFlags = { three_hours: null, thirty_minutes: null, overdue: null, nudge: null };
+  for (const stage of buildNoticeStages(after)) {
+    if (stage.at.getTime() > now.getTime()) {
+      continue; // nel futuro: partira' a tempo debito
+    }
+    const wasAlreadyDue = (oldAt.get(stage.key) ?? Infinity) <= now.getTime();
+    // Gia' dovuto prima della modifica: resta com'era (inviato o in attesa dello scheduler).
+    // Diventato dovuto per colpa della modifica: lo segniamo come gestito.
+    result[stage.key] = wasAlreadyDue ? sent[stage.key] : (sent[stage.key] ?? now.toISOString());
+  }
+  return result;
+}

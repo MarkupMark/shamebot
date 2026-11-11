@@ -10,6 +10,8 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   Ogni persona che usa un comando nel gruppo entra tra i coinquilini.
 - **Attivita' condivise.** Ognuna ha nome, frequenza e gravita' (`poco importante`, `medio`, `importante`).
   Chiunque nella casa puo' aggiungerle, modificarle, eliminarle e segnarle come fatte.
+  Una modifica non fa mai scattare un ritardo: se si accorcia la frequenza la nuova scadenza e' al massimo
+  un ciclo da adesso (mai oltre la vecchia), e chi era gia' in ritardo non riceve un secondo avviso.
 - **Promemoria nel gruppo.** 3 ore e 30 minuti prima della scadenza, poi un messaggio a scadenza avvenuta.
   Per `medio` e `importante` c'e' un secondo sollecito dopo 2 giorni / 1 giorno di ritardo.
   I messaggi citano chi ha fatto l'attivita' l'ultima volta.
