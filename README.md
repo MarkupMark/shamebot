@@ -79,8 +79,9 @@ nell'elenco, contando dall'alto.
 ## Portale web / Mini App
 
 Pagina unica su `/`: accesso con Telegram (automatico dentro la Mini App, altrimenti tramite il bot).
-In cima c'e' la timeline **Prossime scadenze**: una barra per attivita' che si accorcia avvicinandosi alla scadenza,
-con vista Settimana, Mese o Tutto (scala fino all'attivita' piu' lontana). Sotto:
+In cima c'e' **Prossime scadenze**: le attivita' raggruppate per scadenza (In ritardo, Oggi, Entro domenica,
+la settimana dopo, Entro fine mese, Piu' avanti, In pausa). Tutto cio' che sta nello stesso gruppo va fatto nella
+stessa finestra, in qualsiasi ordine; la barretta mostra quanto del periodo e' gia' passato. Sotto:
 elenco attivita' con "Fatto / Modifica / Elimina", registro, coinquilini e impostazione degli avvisi.
 Si vedono solo le case di cui si fa parte.
 

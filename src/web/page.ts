@@ -102,44 +102,38 @@ const PAGE_TEMPLATE = `<!doctype html>
   .head-side select { max-width: 150px; }
   .contrib { font-size: .78rem; color: var(--muted); text-decoration: none; padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: var(--card); white-space: nowrap; }
   .contrib:hover { color: var(--accent); border-color: var(--accent); }
-  .tl { padding: 14px 14px 10px; }
-  .tl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-  .tl-title { font-weight: 700; font-size: 1rem; }
+  .dl { padding: 14px 14px 8px; }
+  .dl-title { font-weight: 700; font-size: 1rem; }
+  .dl-group { display: flex; justify-content: space-between; gap: 8px; font-size: .74rem; font-weight: 700; color: var(--text); margin: 14px 0 2px; text-transform: uppercase; letter-spacing: .03em; }
+  .dl-group span:last-child { font-weight: 500; color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .dl-group.late, .dl-group.late span:last-child { color: var(--late); }
+  .dl-group.soft span:first-child { color: var(--muted); }
+  .dl-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .dl-row:last-child { border-bottom: 0; }
+  .dl-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .dl-name { min-width: 0; font-size: .92rem; font-weight: 600; line-height: 1.2; }
+  .dl-name small { display: block; font-size: .74rem; font-weight: 400; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dl-who { flex-shrink: 0; font-size: .76rem; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+  .dl-who.me { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .dl-who.late { border-color: var(--late); color: var(--late); font-weight: 600; }
+  .dl-who.late.me { background: var(--late); color: #fff; }
+  .dl-who.soft { border-style: dashed; color: var(--muted); }
+  .dl-who.soft.me { background: transparent; color: var(--accent); border-color: var(--accent); }
+  .dl-track { height: 4px; border-radius: 2px; background: var(--line); margin-top: 7px; overflow: hidden; }
+  .dl-track i { display: block; height: 100%; border-radius: 2px; transition: width .4s ease; }
+  .dl-track i.ok { background: var(--ok); }
+  .dl-track i.soon { background: var(--warn); }
+  .dl-track i.urgent { background: var(--late); }
+  .dl-more { display: block; width: 100%; margin-top: 8px; font-size: .82rem; padding: 6px; color: var(--muted); }
+  .dl-empty { color: var(--muted); font-size: .9rem; padding: 6px 0; }
   .seg { display: inline-flex; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 2px; }
   .seg button { border: 0; background: transparent; padding: 5px 11px; font-size: .85rem; border-radius: 8px; color: var(--muted); }
   .seg button.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
-  .tl-axis { position: relative; height: 18px; margin-left: var(--tl-label); font-size: .7rem; color: var(--muted); }
-  .tl-axis span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
-  .tl-axis span:first-child { transform: none; }
-  .tl-rows { position: relative; }
-  .tl-grid { position: absolute; top: 0; bottom: 0; left: var(--tl-label); right: 0; pointer-events: none; }
-  .tl-grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
-  .tl-row { display: grid; grid-template-columns: var(--tl-label) 1fr; align-items: center; min-height: 34px; position: relative; }
-  .tl-label { padding-right: 8px; min-width: 0; line-height: 1.15; }
-  .tl-name { font-size: .86rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tl-sub { font-size: .72rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tl-sub.me { color: var(--accent); font-weight: 600; }
-  .tl-track { position: relative; height: 22px; }
-  .tl-bar { position: absolute; top: 4px; height: 14px; left: 0; border-radius: 0 7px 7px 0; min-width: 6px; transition: width .4s ease; }
-  .tl-bar.ok { background: color-mix(in srgb, var(--ok) 70%, transparent); }
-  .tl-bar.soon { background: var(--warn); }
-  .tl-bar.urgent { background: var(--late); }
-  .tl-bar.far { background: linear-gradient(90deg, color-mix(in srgb, var(--ok) 70%, transparent) 70%, transparent); border-radius: 0; }
-  .tl-bar.paused { width: 100%; border-radius: 7px; background: repeating-linear-gradient(135deg, var(--line) 0 6px, transparent 6px 12px); border: 1px dashed var(--muted); opacity: .8; }
-  .tl-paused-label { position: absolute; left: 8px; top: 3px; font-size: .72rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
   .away { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); margin: 8px 0; font-size: .9rem; }
   .away .grow small { display: block; color: var(--muted); font-size: .78rem; }
   .away.pending { border-color: var(--warn); }
   .away button { padding: 6px 12px; font-size: .85rem; white-space: nowrap; }
   .due-paused { color: var(--muted); font-weight: 600; }
-  .tl-bar.late { background: repeating-linear-gradient(135deg, var(--late) 0 6px, color-mix(in srgb, var(--late) 70%, transparent) 6px 12px); width: 100%; border-radius: 7px; opacity: .9; }
-  .tl-when { position: absolute; top: 3px; font-size: .72rem; font-weight: 600; white-space: nowrap; padding-left: 6px; }
-  .tl-when.inside { color: #fff; padding: 0 8px 0 0; transform: translateX(-100%); }
-  .tl-late-label { position: absolute; left: 8px; top: 3px; font-size: .72rem; font-weight: 700; color: #fff; white-space: nowrap; }
-  .tl-now { position: absolute; top: -4px; bottom: -4px; left: var(--tl-label); width: 2px; background: var(--text); border-radius: 2px; opacity: .55; }
-  .tl-foot { font-size: .78rem; color: var(--muted); margin-top: 6px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-  .tl-foot button { font-size: .78rem; padding: 2px 8px; }
-  .tl-empty { color: var(--muted); font-size: .9rem; padding: 6px 0; }
 
   /* ---- Assegnazione ---- */
   .assign { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
@@ -171,10 +165,10 @@ const PAGE_TEMPLATE = `<!doctype html>
 <script>
 (function () {
   var BOT_USERNAME = __BOT_USERNAME__;
-  var savedRange = null, savedOrder = null;
-  try { savedRange = localStorage.getItem("tlRange"); savedOrder = localStorage.getItem("taskOrder"); } catch (e) {}
+  var savedOrder = null;
+  try { savedOrder = localStorage.getItem("taskOrder"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    range: savedRange === "month" || savedRange === "all" ? savedRange : "week", order: savedOrder === "mine" || savedOrder === "mineany" ? savedOrder : "all", tlExpanded: false, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
+    order: savedOrder === "mine" || savedOrder === "mineany" ? savedOrder : "all", tlExpanded: false, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -333,36 +327,16 @@ const PAGE_TEMPLATE = `<!doctype html>
     return task.assigneeId === state.data.viewerId ? "tocca a te" : task.assigneeName;
   }
 
-  // ---------- Timeline scadenze ----------
-  var RANGES = [["week", "Settimana"], ["month", "Mese"], ["all", "Tutto"]];
+  // ---------- Prossime scadenze: attivita' raggruppate per scadenza ----------
   var WEEKDAYS = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"];
 
   function startOfDay(t) { var d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); }
-
-  function timelineSpan(now, tasks) {
-    if (state.range === "week") return 7 * DAY;
-    if (state.range === "month") return 30 * DAY;
-    var far = now + DAY;
-    tasks.forEach(function (t) { far = Math.max(far, new Date(t.dueAt).getTime()); });
-    return Math.max(DAY, (far - now) * 1.04);
-  }
-
-  function timelineTicks(now, span) {
-    var ticks = [], stepDays;
-    if (span <= 8 * DAY) stepDays = 1;
-    else if (span <= 35 * DAY) stepDays = 7;
-    else stepDays = Math.max(7, Math.ceil(span / DAY / 5 / 7) * 7);
-    var t = startOfDay(now) + stepDays * DAY;
-    if (stepDays === 1) t = startOfDay(now) + DAY;
-    var compact = root.clientWidth < 520;
-    while (t < now + span) {
-      var d = new Date(t);
-      var label = stepDays === 1 ? (compact ? WEEKDAYS[d.getDay()].charAt(0).toUpperCase() + d.getDate() : WEEKDAYS[d.getDay()] + " " + d.getDate())
-        : compact ? d.getDate() + "/" + (d.getMonth() + 1) : d.toLocaleDateString("it-IT", { day: "numeric", month: "short" });
-      ticks.push({ at: (t - now) / span, label: label });
-      t += stepDays * DAY;
-    }
-    return ticks;
+  function addDays(t, n) { var d = new Date(t); d.setDate(d.getDate() + n); return d.getTime(); }
+  var MONTHS = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+  function dayLabel(t) {
+    var d = new Date(t);
+    var other = d.getMonth() !== new Date().getMonth();
+    return WEEKDAYS[d.getDay()] + " " + d.getDate() + (other ? " " + MONTHS[d.getMonth()] : "");
   }
 
   function shortLeft(ms) {
@@ -373,89 +347,88 @@ const PAGE_TEMPLATE = `<!doctype html>
     return Math.round(hrs / 24) + "g";
   }
 
+  /** Gruppi in ordine: oggi, entro domenica, settimana prossima, fine mese, piu' avanti. */
+  function dueGroups(now) {
+    var today = startOfDay(now);
+    var endToday = addDays(today, 1);
+    var weekday = new Date(now).getDay();
+    var endWeek = addDays(today, weekday === 0 ? 1 : 8 - weekday);
+    var endNext = addDays(endWeek, 7);
+    var d = new Date(now);
+    var endMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+    var list = [
+      { key: "today", end: endToday, title: "Oggi", hint: "entro stasera", urgent: true },
+      { key: "week", end: endWeek, title: "Entro domenica", hint: dayLabel(endWeek - 1), urgent: true },
+      { key: "next", end: endNext, title: "Entro " + dayLabel(endNext - 1), hint: "puoi gia' farla" },
+      { key: "month", end: endMonth, title: "Entro fine mese", hint: dayLabel(endMonth - 1) + " · puoi gia' farla" }
+    ].sort(function (a, b) { return a.end - b.end; });
+    var out = [], last = now;
+    list.forEach(function (g) { if (g.end > last) { out.push(g); last = g.end; } });
+    out.push({ key: "later", end: Infinity, title: "Piu' avanti", hint: "" });
+    return out;
+  }
+
+  function dueRow(task, now, kind) {
+    var due = new Date(task.dueAt).getTime();
+    var start = new Date(task.startAt).getTime();
+    var mine = task.assigneeId === state.data.viewerId;
+    var chipCls = "dl-who" + (mine ? " me" : "") + (kind === "late" ? " late" : kind === "soft" ? " soft" : "");
+    var sub = kind === "late" ? "in ritardo di " + shortLeft(due - now)
+      : kind === "paused" ? "in pausa · fuori casa"
+      : task.frequency + " · scade " + (due < addDays(startOfDay(now), 1) ? "alle " + new Date(due).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : dayLabel(due));
+    var row = h("div", { class: "dl-row", title: task.name + " - scade " + when(task.dueAt) },
+      h("div", { class: "dl-line" },
+        h("div", { class: "dl-name" }, task.name, h("small", {}, sub)),
+        h("span", { class: chipCls }, whoLabel(task))
+      )
+    );
+    if (kind !== "late" && kind !== "paused") {
+      var frac = due > start ? Math.min(1, Math.max(0, (now - start) / (due - start))) : 1;
+      var left = due - now;
+      var cls = left < DAY ? "urgent" : left < 3 * DAY || frac > 0.7 ? "soon" : "ok";
+      row.appendChild(h("div", { class: "dl-track" }, h("i", { class: cls, style: "width:" + Math.max(3, frac * 100) + "%" })));
+    }
+    return row;
+  }
+
   function viewTimeline() {
     var now = Date.now();
     var tasks = state.data.tasks.slice().sort(function (a, b) { return new Date(a.dueAt) - new Date(b.dueAt); });
-    var span = timelineSpan(now, tasks);
-    var visible = tasks.filter(function (t) { return new Date(t.dueAt).getTime() - now <= span; });
-    var hidden = tasks.length - visible.length;
-    var limit = 8;
-    var shown = state.tlExpanded ? visible : visible.slice(0, limit);
+    var late = tasks.filter(function (t) { return !t.paused && new Date(t.dueAt).getTime() < now; });
+    var paused = tasks.filter(function (t) { return t.paused; });
+    var mineCount = tasks.filter(function (t) { return !t.paused && t.assigneeId === state.data.viewerId && new Date(t.dueAt).getTime() < addDays(now, 7); }).length;
+    var subtitle = late.length ? late.length + " in ritardo" : "Niente in ritardo";
+    if (mineCount) subtitle += " · " + mineCount + " tocca" + (mineCount === 1 ? "" : "no") + " a te questa settimana";
 
-    var seg = h("div", { class: "seg", role: "tablist" });
-    RANGES.forEach(function (r) {
-      seg.appendChild(h("button", { class: state.range === r[0] ? "on" : "", onclick: function () {
-        state.range = r[0]; state.tlExpanded = false;
-        try { localStorage.setItem("tlRange", r[0]); } catch (e) {}
-        render();
-      } }, r[1]));
-    });
-
-    var lateCount = tasks.filter(function (t) { return !t.paused && new Date(t.dueAt).getTime() < now; }).length;
-    var mineCount = visible.filter(function (t) { return t.assigneeId === state.data.viewerId; }).length;
-    var subtitle = lateCount ? lateCount + " in ritardo" : "Niente in ritardo";
-    if (mineCount) subtitle += " · " + mineCount + " tocca" + (mineCount === 1 ? "" : "no") + " a te";
-
-    var card = h("div", { class: "card tl", style: "--tl-label: min(38%, 150px)" },
-      h("div", { class: "tl-head" },
-        h("div", {}, h("div", { class: "tl-title" }, "Prossime scadenze"), h("div", { class: "muted", style: "font-size:.8rem" }, subtitle)),
-        seg
-      )
+    var card = h("div", { class: "card dl" },
+      h("div", { class: "dl-title" }, "Prossime scadenze"),
+      h("div", { class: "muted", style: "font-size:.8rem" }, subtitle)
     );
+    if (!tasks.length) { card.appendChild(h("div", { class: "dl-empty" }, "Nessuna attivita' da mostrare.")); return card; }
 
-    if (!tasks.length) { card.appendChild(h("div", { class: "tl-empty" }, "Nessuna attivita' da mostrare.")); return card; }
-
-    var ticks = timelineTicks(now, span).filter(function (tick) { return tick.at >= 0.06 && tick.at <= 0.97; });
-    var axis = h("div", { class: "tl-axis" }, ticks.length && ticks[0].at < 0.3 ? null : h("span", { style: "left:0" }, "adesso"));
-    var grid = h("div", { class: "tl-grid" });
-    ticks.forEach(function (tick) {
-      axis.appendChild(h("span", { style: "left:" + (tick.at * 100) + "%" }, tick.label));
-      grid.appendChild(h("i", { style: "left:" + (tick.at * 100) + "%" }));
-    });
-
-    var rows = h("div", { class: "tl-rows" }, grid);
-    if (!visible.length) {
-      rows.appendChild(h("div", { class: "tl-empty" }, state.range === "week" ? "Nulla in scadenza questa settimana." : "Nulla in scadenza nei prossimi 30 giorni."));
+    function group(title, hint, cls, rows) {
+      if (!rows.length) return;
+      card.appendChild(h("div", { class: "dl-group" + (cls ? " " + cls : "") }, h("span", {}, title), h("span", {}, hint)));
+      rows.forEach(function (r) { card.appendChild(r); });
     }
-    shown.forEach(function (task) {
-      var due = new Date(task.dueAt).getTime();
-      var left = due - now;
-      var mine = task.assigneeId === state.data.viewerId;
-      var track = h("div", { class: "tl-track", title: task.name + " - scade " + when(task.dueAt) });
-      if (task.paused) {
-        track.appendChild(h("div", { class: "tl-bar paused" }));
-        track.appendChild(h("span", { class: "tl-paused-label" }, "⏸ in pausa · fuori casa"));
-      } else if (left < 0) {
-        track.appendChild(h("div", { class: "tl-bar late" }));
-        track.appendChild(h("span", { class: "tl-late-label" }, "in ritardo di " + shortLeft(left)));
-      } else {
-        var frac = Math.min(1, left / span);
-        var cls = left < DAY ? "urgent" : left < 3 * DAY ? "soon" : "ok";
-        track.appendChild(h("div", { class: "tl-bar " + cls, style: "width:" + (frac * 100) + "%" }));
-        var inside = frac > 0.78;
-        track.appendChild(h("span", { class: "tl-when" + (inside ? " inside" : ""), style: "left:" + (frac * 100) + "%" }, shortLeft(left)));
+
+    group("In ritardo", late.length === 1 ? "1 attivita'" : late.length + " attivita'", "late", late.map(function (t) { return dueRow(t, now, "late"); }));
+    var open = tasks.filter(function (t) { return !t.paused && new Date(t.dueAt).getTime() >= now; });
+    var start = now;
+    dueGroups(now).forEach(function (g) {
+      var inGroup = open.filter(function (t) { var due = new Date(t.dueAt).getTime(); return due >= start && due < g.end; });
+      start = g.end;
+      if (g.key === "later" && inGroup.length && !state.tlExpanded) {
+        card.appendChild(h("button", { class: "ghost dl-more", onclick: function () { state.tlExpanded = true; render(); } },
+          "Piu' avanti (" + inGroup.length + ")"));
+        return;
       }
-      rows.appendChild(h("div", { class: "tl-row" },
-        h("div", { class: "tl-label" },
-          h("div", { class: "tl-name" }, task.name),
-          h("div", { class: "tl-sub" + (mine ? " me" : "") }, whoLabel(task))
-        ),
-        track
-      ));
+      group(g.title, g.hint, g.urgent ? "" : "soft", inGroup.map(function (t) { return dueRow(t, now, g.urgent ? "open" : "soft"); }));
     });
-    rows.appendChild(h("div", { class: "tl-now" }));
-    card.appendChild(axis);
-    card.appendChild(rows);
-
-    var foot = h("div", { class: "tl-foot" });
-    if (visible.length > limit) {
-      foot.appendChild(h("button", { class: "ghost", onclick: function () { state.tlExpanded = !state.tlExpanded; render(); } },
-        state.tlExpanded ? "Mostra meno" : "Mostra tutte (" + visible.length + ")"));
-    } else { foot.appendChild(h("span", {})); }
-    if (hidden > 0) {
-      foot.appendChild(h("span", {}, "+" + hidden + " piu' avanti"));
+    group("In pausa", "fuori casa", "soft", paused.map(function (t) { return dueRow(t, now, "paused"); }));
+    if (state.tlExpanded) {
+      card.appendChild(h("button", { class: "ghost dl-more", onclick: function () { state.tlExpanded = false; render(); } }, "Mostra meno"));
     }
-    card.appendChild(foot);
     return card;
   }
 
