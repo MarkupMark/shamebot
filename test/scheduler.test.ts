@@ -73,7 +73,7 @@ describe("runDueChecks", () => {
 
     const sent: string[] = [];
     expect(await runDueChecks(store, async (_c, text) => void sent.push(text), new Date("2026-11-02T11:00:00.000Z"), first)).toBe(1);
-    expect(sent[0]).toBe("😬 Umido · scaduta · tocca a Luca\nLuca, Umido! Puzza tutto.");
+    expect(sent[0]).toBe("😬 Umido · scaduta · doveva farla Luca\nLuca, Umido! Puzza tutto.");
   });
 
   it("senza insulti degli altri usa i predefiniti", async () => {
@@ -86,7 +86,7 @@ describe("runDueChecks", () => {
 
     const sent: string[] = [];
     await runDueChecks(store, async (_c, text) => void sent.push(text), new Date("2026-11-02T11:00:00.000Z"), first);
-    expect(sent[0]).toBe("😬 Umido · scaduta · tocca a Luca\nLuca, Umido è scaduta. La casa ti guarda 👀");
+    expect(sent[0]).toBe("😬 Umido · scaduta · doveva farla Luca\nLuca, Umido è scaduta. La casa ti guarda 👀");
   });
 });
 

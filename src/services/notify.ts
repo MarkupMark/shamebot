@@ -115,8 +115,12 @@ export function noticeMessage(task: Task, stage: NoticeStageKey, now: Date): str
     case "thirty_minutes":
       return `⏰ ${task.name} · tra 30m${who}`;
     case "overdue":
-      return `😬 ${task.name} · scaduta${who || last}`;
+      return task.assigneeName
+        ? `😬 ${task.name} · scaduta · doveva farla ${task.assigneeName}`
+        : `😬 ${task.name} · scaduta${last}`;
     case "nudge":
-      return `🚨 ${task.name} · ritardo ${formatShortDuration(overdueMs)}${who || last}`;
+      return task.assigneeName
+        ? `🚨 ${task.name} · ${task.assigneeName} è in ritardo di ${formatShortDuration(overdueMs)}`
+        : `🚨 ${task.name} · ritardo ${formatShortDuration(overdueMs)}${last}`;
   }
 }

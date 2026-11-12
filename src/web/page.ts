@@ -962,7 +962,7 @@ const PAGE_TEMPLATE = `<!doctype html>
         return;
       }
       example.className = "bubble";
-      example.textContent = "😬 Pulire il bagno · scaduta · tocca a " + someone + String.fromCharCode(10) +
+      example.textContent = "😬 Pulire il bagno · scaduta · doveva farla " + someone + String.fromCharCode(10) +
         text.split("{nome}").join(someone).split("{attivita}").join("Pulire il bagno").split("{attività}").join("Pulire il bagno").replace(/ +([,.!?;:])/g, "$1");
     }
     function drawList(focusIndex) {
