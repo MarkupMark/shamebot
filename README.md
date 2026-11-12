@@ -91,7 +91,8 @@ nell'elenco, contando dall'alto.
 Pagina unica su `/`: accesso con Telegram (automatico dentro la Mini App, altrimenti tramite il bot).
 In cima c'e' **Prossime scadenze**: le attivita' raggruppate per scadenza (In ritardo, Oggi, Entro domenica,
 la settimana dopo, Entro fine mese, Piu' avanti, In pausa). Tutto cio' che sta nello stesso gruppo va fatto nella
-stessa finestra, in qualsiasi ordine; la barretta mostra quanto del periodo e' gia' passato. Sotto:
+stessa finestra, in qualsiasi ordine; la barretta mostra quanto del periodo e' gia' passato. Con "Solo mie" si vedono solo
+le attivita' che toccano a te (la scelta resta salvata nel browser). Sotto:
 elenco attivita' con "Fatto / Modifica / Elimina", registro, coinquilini e impostazione degli avvisi.
 Si vedono solo le case di cui si fa parte.
 

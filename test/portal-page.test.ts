@@ -15,4 +15,9 @@ describe("portale", () => {
     expect(html).toContain("Entro fine mese");
     expect(html).not.toContain("tl-axis");
   });
+
+  it("Prossime scadenze ha il filtro 'Solo mie', ricordato nel browser", () => {
+    expect(html).toContain("Solo mie");
+    expect(html).toContain('localStorage.setItem("dlMine"');
+  });
 });

@@ -104,6 +104,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   .contrib:hover { color: var(--accent); border-color: var(--accent); }
   .dl { padding: 14px 14px 8px; }
   .dl-title { font-weight: 700; font-size: 1rem; }
+  .dl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
   .dl-group { display: flex; justify-content: space-between; gap: 8px; font-size: .74rem; font-weight: 700; color: var(--text); margin: 14px 0 2px; text-transform: uppercase; letter-spacing: .03em; }
   .dl-group span:last-child { font-weight: 500; color: var(--muted); text-transform: none; letter-spacing: 0; }
   .dl-group.late, .dl-group.late span:last-child { color: var(--late); }
@@ -166,10 +167,10 @@ const PAGE_TEMPLATE = `<!doctype html>
 <script>
 (function () {
   var BOT_USERNAME = __BOT_USERNAME__;
-  var savedOrder = null;
-  try { savedOrder = localStorage.getItem("taskOrder"); } catch (e) {}
+  var savedOrder = null, savedDlMine = null;
+  try { savedOrder = localStorage.getItem("taskOrder"); savedDlMine = localStorage.getItem("dlMine"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    order: savedOrder === "mine" || savedOrder === "mineany" ? savedOrder : "all", tlExpanded: false, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
+    order: savedOrder === "mine" || savedOrder === "mineany" ? savedOrder : "all", tlExpanded: false, dlMine: savedDlMine === "1", swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -408,17 +409,32 @@ const PAGE_TEMPLATE = `<!doctype html>
   function viewTimeline() {
     var now = Date.now();
     var tasks = state.data.tasks.slice().sort(function (a, b) { return new Date(a.dueAt) - new Date(b.dueAt); });
+    // "Solo mie": solo le attivita' che toccano a chi guarda (non quelle di chiunque).
+    if (state.dlMine) tasks = tasks.filter(function (t) { return t.assigneeId === state.data.viewerId; });
     var late = tasks.filter(function (t) { return !t.paused && new Date(t.dueAt).getTime() < now; });
     var paused = tasks.filter(function (t) { return t.paused; });
     var mineCount = tasks.filter(function (t) { return !t.paused && !isClosed(t, now) && t.assigneeId === state.data.viewerId && new Date(t.dueAt).getTime() < addDays(now, 7); }).length;
     var subtitle = late.length ? late.length + " in ritardo" : "Niente in ritardo";
     if (mineCount) subtitle += " · " + mineCount + " tocca" + (mineCount === 1 ? "" : "no") + " a te questa settimana";
 
+    var seg = h("div", { class: "seg", role: "tablist" });
+    [[false, "Tutte"], [true, "Solo mie"]].forEach(function (o) {
+      seg.appendChild(h("button", { class: state.dlMine === o[0] ? "on" : "", "aria-pressed": state.dlMine === o[0] ? "true" : "false", onclick: function () {
+        state.dlMine = o[0]; state.tlExpanded = false;
+        try { localStorage.setItem("dlMine", o[0] ? "1" : "0"); } catch (e) {}
+        render();
+      } }, o[1]));
+    });
     var card = h("div", { class: "card dl" },
-      h("div", { class: "dl-title" }, "Prossime scadenze"),
-      h("div", { class: "muted", style: "font-size:.8rem" }, subtitle)
+      h("div", { class: "dl-head" },
+        h("div", {}, h("div", { class: "dl-title" }, "Prossime scadenze"), h("div", { class: "muted", style: "font-size:.8rem" }, subtitle)),
+        seg
+      )
     );
-    if (!tasks.length) { card.appendChild(h("div", { class: "dl-empty" }, "Nessuna attivita' da mostrare.")); return card; }
+    if (!tasks.length) {
+      card.appendChild(h("div", { class: "dl-empty" }, state.dlMine ? "Niente che tocchi a te 🎉" : "Nessuna attivita' da mostrare."));
+      return card;
+    }
 
     function group(title, hint, cls, rows) {
       if (!rows.length) return;
