@@ -315,8 +315,8 @@ const PAGE_TEMPLATE = `<!doctype html>
   function dueInfo(task) {
     var left = new Date(task.dueAt).getTime() - Date.now();
     if (left < 0) return { cls: "due-late", text: "In ritardo di " + duration(left) };
-    if (isClosed(task, Date.now())) return { cls: "due-ok", text: "✓ Fatta · si riapre " + dayLabel(new Date(task.startAt).getTime()), closed: true };
-    var text = task.intervalMs < DAY ? "Entro " + duration(left) : "Entro " + dayLabel(new Date(task.dueAt).getTime() - 1);
+    if (isClosed(task, Date.now())) return { cls: "due-ok", text: "✓ Fatta · si riapre " + relDay(new Date(task.startAt).getTime()), closed: true };
+    var text = task.intervalMs < DAY ? "Entro " + duration(left) : "Entro " + relDay(new Date(task.dueAt).getTime() - 1);
     return { cls: left < DAY ? "due-soon" : "due-ok", text: text };
   }
   var SEVERITY = { low: "poco importante", medium: "medio", high: "importante" };
@@ -344,6 +344,14 @@ const PAGE_TEMPLATE = `<!doctype html>
     var other = d.getMonth() !== new Date().getMonth();
     return WEEKDAYS[d.getDay()] + " " + d.getDate() + (other ? " " + MONTHS[d.getMonth()] : "");
   }
+  /** "oggi", "domani", "dopodomani", altrimenti la data ("dom 15"). */
+  function relDay(t) {
+    var diff = Math.round((startOfDay(t) - startOfDay(Date.now())) / DAY);
+    if (diff === 0) return "oggi";
+    if (diff === 1) return "domani";
+    if (diff === 2) return "dopodomani";
+    return dayLabel(t);
+  }
 
   function shortLeft(ms) {
     var m = Math.round(Math.abs(ms) / 60000);
@@ -356,11 +364,11 @@ const PAGE_TEMPLATE = `<!doctype html>
   /** Periodi fissi: prima di startAt l'attivita' e' gia' fatta per questo periodo (si riapre a startAt). */
   function isClosed(task, now) { return !task.paused && new Date(task.startAt).getTime() > now; }
 
-  /** "entro dom 15" (scadenza a fine giornata) oppure "entro le 18:00" per le attivita' di poche ore. */
+  /** "entro domani" / "entro dom 15" (scadenza a fine giornata) oppure "entro le 18:00" per le attivita' di poche ore. */
   function deadlineText(task) {
     var due = new Date(task.dueAt).getTime();
     if (task.intervalMs < DAY) return "entro le " + new Date(due).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
-    return "entro " + dayLabel(due - 1);
+    return "entro " + relDay(due - 1);
   }
 
   /** Gruppi in ordine: oggi, entro domenica, settimana prossima, fine mese, piu' avanti. */
@@ -391,7 +399,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     var chipCls = "dl-who" + (mine ? " me" : "") + (kind === "late" ? " late" : kind === "soft" || kind === "done" ? " soft" : "");
     var sub = kind === "late" ? "in ritardo di " + shortLeft(due - now)
       : kind === "paused" ? "in pausa · fuori casa"
-      : kind === "done" ? "fatta" + (task.lastCompletedByName ? " da " + task.lastCompletedByName : "") + " · si riapre " + dayLabel(start)
+      : kind === "done" ? "fatta" + (task.lastCompletedByName ? " da " + task.lastCompletedByName : "") + " · si riapre " + relDay(start)
       : task.frequency + " · " + deadlineText(task);
     var row = h("div", { class: "dl-row" + (kind === "done" ? " done" : ""), title: task.name + " - scade " + when(task.dueAt) },
       h("div", { class: "dl-line" },

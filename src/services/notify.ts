@@ -2,12 +2,31 @@ import type { MovedTask, NoticeStageKey, Task } from "../types/domain.js";
 import { formatFrequencyShort, formatShortDuration } from "../utils/duration.js";
 import { severityToItalian } from "../utils/labels.js";
 import { getDueAt } from "./policy.js";
+import { localParts } from "../utils/timezone.js";
 
 const dayMs = 24 * 60 * 60 * 1000;
 
-/** "dom 22": l'ultimo giorno utile per una scadenza a fine periodo (mezzanotte = fine del giorno prima). */
-export function deadlineDay(dueAt: Date, timezone = "Europe/Rome"): string {
-  return new Intl.DateTimeFormat("it-IT", { timeZone: timezone, weekday: "short", day: "numeric" }).format(new Date(dueAt.getTime() - 1));
+/**
+ * Nome del giorno di `at` visto da `now`: "oggi", "domani", "dopodomani", altrimenti "dom 22".
+ * Senza `now` sempre la data.
+ */
+export function dayName(at: Date, timezone = "Europe/Rome", now?: Date): string {
+  if (now) {
+    const toDay = (d: Date) => {
+      const [y, m, day] = localParts(d, timezone).date.split("-").map(Number);
+      return Math.round(Date.UTC(y!, m! - 1, day!) / dayMs);
+    };
+    const diff = toDay(at) - toDay(now);
+    if (diff === 0) return "oggi";
+    if (diff === 1) return "domani";
+    if (diff === 2) return "dopodomani";
+  }
+  return new Intl.DateTimeFormat("it-IT", { timeZone: timezone, weekday: "short", day: "numeric" }).format(at);
+}
+
+/** "dom 22" (o "oggi"/"domani"/"dopodomani" se c'e' `now`): l'ultimo giorno utile per una scadenza a fine periodo (mezzanotte = fine del giorno prima). */
+export function deadlineDay(dueAt: Date, timezone = "Europe/Rome", now?: Date): string {
+  return dayName(new Date(dueAt.getTime() - 1), timezone, now);
 }
 
 /** Pulsanti sotto un messaggio: righe di [testo, dato del callback]. */
@@ -46,7 +65,7 @@ export function formatTaskBullet(task: Task, now: Date, away: Set<number> = new 
     leftMs < 0
       ? `⚠️ in ritardo di ${formatShortDuration(leftMs)}`
       : task.intervalMs >= dayMs
-        ? `entro ${deadlineDay(dueAt, timezone)}`
+        ? `entro ${deadlineDay(dueAt, timezone, now)}`
         : `entro ${formatShortDuration(leftMs)}`;
   return `• ${task.name} · ${state}`;
 }
@@ -74,18 +93,18 @@ export function taskRestoredMessage(actorName: string, task: Task): string {
   return `♻️ ${actorName}: ${task.name} · ${formatFrequencyShort(task.intervalMs)}`;
 }
 
-export function taskCompletedMessage(actorName: string, task: Task, timezone = "Europe/Rome"): string {
+export function taskCompletedMessage(actorName: string, task: Task, timezone = "Europe/Rome", now: Date = new Date()): string {
   const who = task.assigneeName ? ` · tocca a ${task.assigneeName}` : "";
   if (task.intervalMs >= dayMs) {
-    return `✅ ${actorName}: ${task.name} · prossima entro ${deadlineDay(getDueAt(task), timezone)}${who}`;
+    return `✅ ${actorName}: ${task.name} · prossima entro ${deadlineDay(getDueAt(task), timezone, now)}${who}`;
   }
-  const next = Math.max(0, getDueAt(task).getTime() - Date.now());
+  const next = Math.max(0, getDueAt(task).getTime() - now.getTime());
   return `✅ ${actorName}: ${task.name} · prossima tra ${formatShortDuration(next || task.intervalMs)}${who}`;
 }
 
 /** "Fatto" quando la finestra successiva non e' ancora aperta. */
-export function tooEarlyMessage(task: Pick<Task, "name">, opensAt: Date, timezone = "Europe/Rome"): string {
-  return `👌 ${task.name} è già fatta per questo periodo · si riapre ${deadlineDay(new Date(opensAt.getTime() + 1), timezone)}`;
+export function tooEarlyMessage(task: Pick<Task, "name">, opensAt: Date, timezone = "Europe/Rome", now?: Date): string {
+  return `👌 ${task.name} è già fatta per questo periodo · si riapre ${dayName(opensAt, timezone, now)}`;
 }
 
 export function awayRequestedMessage(name: string): string {

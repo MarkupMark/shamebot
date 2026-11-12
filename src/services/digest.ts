@@ -2,7 +2,7 @@ import type { DigestKind, DigestSettings, House, Task } from "../types/domain.js
 import type { HouseStore } from "./store.js";
 import { getDueAt } from "./policy.js";
 import { isTooEarly } from "./periods.js";
-import { safeSend, type SendToChat } from "./notify.js";
+import { deadlineDay, safeSend, type SendToChat } from "./notify.js";
 import { formatShortDuration } from "../utils/duration.js";
 import { sortTasksByDueDate } from "../utils/tasks.js";
 
@@ -49,10 +49,6 @@ export type DigestMessage = {
   empty: boolean;
 };
 
-function dayLabel(at: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("it-IT", { timeZone: timezone, weekday: "short", day: "numeric" }).format(at);
-}
-
 /**
  * Buongiorno: cosa e' in ritardo, cosa scade oggi e cosa scade domani (cosi' chi ha una scadenza domani
  * presto lo sa con un giorno di anticipo), poi "se vuoi fare altro oggi" con le prossime 3 attivita' dopo domani.
@@ -96,7 +92,7 @@ export function buildDigest(
       sections.push("Oggi e domani niente in scadenza 🎉");
     }
     if (later.length) {
-      sections.push(["Se vuoi fare altro oggi:", ...later.map((t) => `• ${t.name} · entro ${dayLabel(new Date(getDueAt(t).getTime() - 1), timezone)}${who(t)}`)].join("\n"));
+      sections.push(["Se vuoi fare altro oggi:", ...later.map((t) => `• ${t.name} · entro ${deadlineDay(getDueAt(t), timezone, now)}${who(t)}`)].join("\n"));
     }
   } else {
     const tomorrow = sorted.filter((task) => getDueAt(task) > endOfToday && getDueAt(task) <= endOfTomorrow);

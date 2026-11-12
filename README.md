@@ -16,6 +16,7 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   *2 volte a settimana* = lun-mer e gio-dom (3 volte = lun-mar, mer-gio, ven-dom); *2 / 3 volte al mese* = il mese
   diviso in 2 o 3; sotto il giorno = finestre di ore dalla mezzanotte. Farla presto o tardi nella finestra non sposta
   la prossima, e non si puo' chiudere in anticipo la finestra successiva ("già fatta per questo periodo · si riapre lun 16").
+  Le scadenze vicine si leggono "entro oggi", "entro domani", "entro dopodomani"; quelle piu' lontane con la data ("entro dom 22").
   Se una finestra scade senza "Fatto" resta in ritardo finche' qualcuno non la fa; poi si deve comunque fare quella in corso.
   Un'attivita' nuova scade a fine della finestra in corso (o della successiva se ne resta meno di un terzo).
   Le scadenze create prima dei periodi fissi vengono spostate una volta sola alla fine del loro periodo

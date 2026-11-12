@@ -282,11 +282,11 @@ export class HouseService {
     const tz = this.store.timezone;
     // Periodi fissi: farla in anticipo non chiude la finestra successiva.
     if (!current.slotDueAt && isTooEarly(getDueAt(current), now, current.intervalMs, tz)) {
-      throw new TooEarlyError(tooEarlyMessage(current, windowStart(getDueAt(current), current.intervalMs, tz), tz));
+      throw new TooEarlyError(tooEarlyMessage(current, windowStart(getDueAt(current), current.intervalMs, tz), tz, now));
     }
     const task = await this.store.completeTask(house.id, taskId, actor.id, now);
     if (task && announce) {
-      await safeSend(this.send, house.chatId, taskCompletedMessage(actor.displayName, task, tz));
+      await safeSend(this.send, house.chatId, taskCompletedMessage(actor.displayName, task, tz, now));
     }
     return task;
   }

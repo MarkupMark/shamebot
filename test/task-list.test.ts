@@ -19,8 +19,8 @@ describe("Elenco /attivita", () => {
     const compact = formatTaskList(tasks, start, 5).split("\n");
     expect(compact).toEqual([
       "• Umido · ⚠️ in ritardo di 5h",
-      "• Attivita 1 · entro sab 7",
-      "• Attivita 2 · entro dom 8",
+      "• Attivita 1 · entro domani",
+      "• Attivita 2 · entro dopodomani",
       "• Attivita 3 · entro lun 9",
       "• Attivita 4 · entro mar 10",
     ]);
