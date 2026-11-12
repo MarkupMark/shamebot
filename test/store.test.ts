@@ -157,7 +157,8 @@ describe("HouseStore", () => {
     const deletedEntry = log.find((entry) => entry.kind === "deleted")!;
     const restored = await store.restoreTask(house.id, deletedEntry.id, anna.id);
     expect(restored).toMatchObject({ name: "Bagno", intervalMs: 3.5 * day, severity: "high" });
-    expect(new Date(restored!.cycleAnchorAt).getTime()).toBeGreaterThan(Date.now() - 60_000);
+    // Riparte dal periodo in corso: la scadenza e' nel futuro.
+    expect(new Date(restored!.cycleAnchorAt).getTime() + restored!.intervalMs).toBeGreaterThan(Date.now());
     expect(restored?.id).not.toBe(task.id);
 
     const after = await store.listLog(house.id);

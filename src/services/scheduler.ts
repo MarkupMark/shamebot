@@ -15,6 +15,8 @@ export async function runDueChecks(
   now: Date = new Date(),
   pick: Chooser = randomPick,
 ): Promise<number> {
+  // Scadenze vecchie (di prima dei periodi fissi): si allineano alla fine del loro periodo.
+  await store.alignDeadlinesToPeriods(now);
   const tasks = await store.listTasksWithHouses();
   const away = await store.listAwayUsers();
   let sent = 0;

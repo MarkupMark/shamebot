@@ -62,7 +62,7 @@ const helpText = [
   "/rientro [nome] · rientro a casa",
   "/notifiche on|off",
   "",
-  "Frequenza: 3 giorni · 1 settimana · 2 volte a settimana",
+  "Frequenza: 3 giorni · 1 settimana · 2 volte a settimana · ogni mese",
   "Gravità: poco importante · medio · importante",
   "«-» lascia invariato · «| silenzioso» non avvisa il gruppo",
 ].join("\n");

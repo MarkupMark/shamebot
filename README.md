@@ -12,12 +12,14 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   Chiunque nella casa puo' aggiungerle, modificarle, eliminarle e segnarle come fatte.
 - **Periodi fissi.** La scadenza non riparte da quando si preme "Fatto": ogni frequenza ha finestre fisse a calendario
   (fuso della casa) e si deve fare entro la fine della finestra. *Ogni giorno* = la giornata; *ogni settimana* =
-  lunedi'-domenica; *ogni N settimane* = blocchi fissi di N settimane; *ogni mese* = mese di calendario;
+  lunedi'-domenica; *ogni N settimane* = blocchi fissi di N settimane; *ogni mese* (o *ogni N mesi*) = mese di calendario (marzo, aprile...);
   *2 volte a settimana* = lun-mer e gio-dom (3 volte = lun-mar, mer-gio, ven-dom); *2 / 3 volte al mese* = il mese
   diviso in 2 o 3; sotto il giorno = finestre di ore dalla mezzanotte. Farla presto o tardi nella finestra non sposta
   la prossima, e non si puo' chiudere in anticipo la finestra successiva ("già fatta per questo periodo · si riapre lun 16").
   Se una finestra scade senza "Fatto" resta in ritardo finche' qualcuno non la fa; poi si deve comunque fare quella in corso.
   Un'attivita' nuova scade a fine della finestra in corso (o della successiva se ne resta meno di un terzo).
+  Le scadenze create prima dei periodi fissi vengono spostate una volta sola alla fine del loro periodo
+  (es. settimanale: la domenica); quelle gia' in ritardo si allineano al primo "Fatto".
   Le scadenze di prima di questo cambio restano com'erano fino al primo "Fatto".
   Una modifica non fa mai scattare un ritardo: se si cambia la frequenza si riparte dalla finestra in corso della
   nuova frequenza, accorciando mai oltre la vecchia scadenza, e chi era gia' in ritardo non riceve un secondo avviso.
@@ -34,8 +36,8 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   o con "Inverti ordine". Dal pulsante 🔄 sulla card un coinquilino chiede a un altro della rotazione di scambiarsi il
   turno; nel gruppo compaiono "✅ Accetto" / "❌ Rifiuto" (risponde solo chi l'ha ricevuta, anche dal portale).
   Se accetta, i due si invertono nella rotazione. Chi ha chiesto puo' annullare finche' non c'e' risposta.
-- **Ordine delle attivita'.** Nella scheda Attivita' ognuno sceglie come vederle: *Tutte* (per scadenza), *Prima le mie* (tue, di chiunque, degli altri)
-  o *Mie + chiunque* (tue e di chiunque insieme, poi gli altri). La scelta resta salvata nel browser.
+- **Ordine delle attivita'.** Un solo interruttore, in Prossime scadenze, vale per tutto il portale: *Tutte* (per scadenza)
+  o *Prima le mie* (tue, poi di chiunque, poi degli altri, sia in Prossime scadenze sia nella lista). La scelta resta salvata nel browser.
 - **Fuori casa.** Dal portale (scheda Membri) o con `/fuori` un coinquilino dice "🧳 Sono fuori casa"; nel gruppo compare la richiesta con il pulsante
   "✅ Confermo" e serve l'ok di un **altro** coinquilino (dal gruppo o dal portale). Da quel momento le attivita' che
   toccano a lui sono in pausa: niente promemoria, avvisi o insulti. Al rientro (lo segna lui o chiunque, dal portale o con `/rientro [nome]`) le
@@ -91,8 +93,8 @@ nell'elenco, contando dall'alto.
 Pagina unica su `/`: accesso con Telegram (automatico dentro la Mini App, altrimenti tramite il bot).
 In cima c'e' **Prossime scadenze**: le attivita' raggruppate per scadenza (In ritardo, Oggi, Entro domenica,
 la settimana dopo, Entro fine mese, Piu' avanti, In pausa). Tutto cio' che sta nello stesso gruppo va fatto nella
-stessa finestra, in qualsiasi ordine; la barretta mostra quanto del periodo e' gia' passato. Con "Solo mie" si vedono solo
-le attivita' che toccano a te (la scelta resta salvata nel browser). Sotto:
+stessa finestra, in qualsiasi ordine; la barretta mostra quanto del periodo e' gia' passato. Con "Prima le mie" le tue
+stanno in cima a ogni gruppo. Sotto:
 elenco attivita' con "Fatto / Modifica / Elimina", registro, coinquilini e impostazione degli avvisi.
 Si vedono solo le case di cui si fa parte.
 

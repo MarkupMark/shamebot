@@ -167,10 +167,11 @@ const PAGE_TEMPLATE = `<!doctype html>
 <script>
 (function () {
   var BOT_USERNAME = __BOT_USERNAME__;
+  // Un solo filtro per tutto il portale: "Tutte" o "Prima le mie" (vale per Prossime scadenze e per la lista).
   var savedOrder = null, savedDlMine = null;
   try { savedOrder = localStorage.getItem("taskOrder"); savedDlMine = localStorage.getItem("dlMine"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    order: savedOrder === "mine" || savedOrder === "mineany" ? savedOrder : "all", tlExpanded: false, dlMine: savedDlMine === "1", swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
+    mineFirst: savedOrder === "mine" || savedOrder === "mineany" || savedDlMine === "1", tlExpanded: false, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -289,16 +290,17 @@ const PAGE_TEMPLATE = `<!doctype html>
   }
 
   // ---------- Utilita' ----------
-  var HOUR = 3600000, DAY = 24 * HOUR, WEEK = 7 * DAY;
+  var HOUR = 3600000, DAY = 24 * HOUR, WEEK = 7 * DAY, MONTH = 30 * DAY;
   var FREQUENCIES = [
     { label: "Ogni giorno", value: "1 giorno", ms: DAY },
     { label: "3 volte a settimana", value: "3 volte a settimana", ms: Math.round(WEEK / 3) },
     { label: "2 volte a settimana", value: "2 volte a settimana", ms: Math.round(WEEK / 2) },
     { label: "Ogni settimana", value: "1 settimana", ms: WEEK },
     { label: "Ogni 2 settimane", value: "2 settimane", ms: 2 * WEEK },
-    { label: "Ogni mese", value: "30 giorni", ms: 30 * DAY }
+    { label: "Ogni mese", value: "1 mese", ms: MONTH }
   ];
   function intervalToInput(ms) {
+    if (ms % MONTH === 0) return { n: ms / MONTH, unit: "mesi" };
     if (ms % WEEK === 0) return { n: ms / WEEK, unit: "settimane" };
     if (ms % DAY === 0) return { n: ms / DAY, unit: "giorni" };
     return { n: Math.max(1, Math.round(ms / HOUR)), unit: "ore" };
@@ -409,22 +411,13 @@ const PAGE_TEMPLATE = `<!doctype html>
   function viewTimeline() {
     var now = Date.now();
     var tasks = state.data.tasks.slice().sort(function (a, b) { return new Date(a.dueAt) - new Date(b.dueAt); });
-    // "Solo mie": solo le attivita' che toccano a chi guarda (non quelle di chiunque).
-    if (state.dlMine) tasks = tasks.filter(function (t) { return t.assigneeId === state.data.viewerId; });
     var late = tasks.filter(function (t) { return !t.paused && new Date(t.dueAt).getTime() < now; });
     var paused = tasks.filter(function (t) { return t.paused; });
     var mineCount = tasks.filter(function (t) { return !t.paused && !isClosed(t, now) && t.assigneeId === state.data.viewerId && new Date(t.dueAt).getTime() < addDays(now, 7); }).length;
     var subtitle = late.length ? late.length + " in ritardo" : "Niente in ritardo";
     if (mineCount) subtitle += " · " + mineCount + " tocca" + (mineCount === 1 ? "" : "no") + " a te questa settimana";
 
-    var seg = h("div", { class: "seg", role: "tablist" });
-    [[false, "Tutte"], [true, "Solo mie"]].forEach(function (o) {
-      seg.appendChild(h("button", { class: state.dlMine === o[0] ? "on" : "", "aria-pressed": state.dlMine === o[0] ? "true" : "false", onclick: function () {
-        state.dlMine = o[0]; state.tlExpanded = false;
-        try { localStorage.setItem("dlMine", o[0] ? "1" : "0"); } catch (e) {}
-        render();
-      } }, o[1]));
-    });
+    var seg = orderToggle();
     var card = h("div", { class: "card dl" },
       h("div", { class: "dl-head" },
         h("div", {}, h("div", { class: "dl-title" }, "Prossime scadenze"), h("div", { class: "muted", style: "font-size:.8rem" }, subtitle)),
@@ -432,7 +425,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       )
     );
     if (!tasks.length) {
-      card.appendChild(h("div", { class: "dl-empty" }, state.dlMine ? "Niente che tocchi a te 🎉" : "Nessuna attivita' da mostrare."));
+      card.appendChild(h("div", { class: "dl-empty" }, "Nessuna attivita' da mostrare."));
       return card;
     }
 
@@ -442,6 +435,8 @@ const PAGE_TEMPLATE = `<!doctype html>
       rows.forEach(function (r) { card.appendChild(r); });
     }
 
+    late.sort(function (a, b) { return ownerRank(a) - ownerRank(b); });
+    paused.sort(function (a, b) { return ownerRank(a) - ownerRank(b); });
     group("In ritardo", late.length === 1 ? "1 attivita'" : late.length + " attivita'", "late", late.map(function (t) { return dueRow(t, now, "late"); }));
     // Una scadenza a mezzanotte appartiene al giorno prima (due - 1). Le attivita' gia' fatte per questo
     // periodo stanno nel gruppo del periodo appena chiuso, con la spunta e la data in cui si riaprono.
@@ -452,7 +447,7 @@ const PAGE_TEMPLATE = `<!doctype html>
         var at = isClosed(t, now) ? new Date(t.startAt).getTime() - 1 : new Date(t.dueAt).getTime() - 1;
         return at >= start && at < g.end;
       });
-      inGroup.sort(function (a, b) { return (isClosed(a, now) ? 1 : 0) - (isClosed(b, now) ? 1 : 0); });
+      inGroup.sort(function (a, b) { return (isClosed(a, now) ? 1 : 0) - (isClosed(b, now) ? 1 : 0) || ownerRank(a) - ownerRank(b); });
       start = g.end;
       if (g.key === "later" && inGroup.length && !state.tlExpanded) {
         card.appendChild(h("button", { class: "ghost dl-more", onclick: function () { state.tlExpanded = true; render(); } },
@@ -626,7 +621,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     }
     var n = h("input", { type: "number", min: "1", value: String(current.n) });
     var unit = h("select", {});
-    ["ore", "giorni", "settimane"].forEach(function (u) {
+    ["ore", "giorni", "settimane", "mesi"].forEach(function (u) {
       var opt = h("option", { value: u }, u); if (u === current.unit) opt.selected = true; unit.appendChild(opt);
     });
     var customRow = h("div", { class: "row", style: "margin-top:8px" }, "Ogni", n, unit);
@@ -758,36 +753,31 @@ const PAGE_TEMPLATE = `<!doctype html>
   }
 
   // ---------- Viste ----------
-  var ORDERS = [
-    ["all", "Tutte", "In ordine di scadenza"],
-    ["mine", "Prima le mie", "Le tue, poi di chiunque, poi degli altri"],
-    ["mineany", "Mie + chiunque", "Le tue e di chiunque insieme, poi degli altri"]
-  ];
-  // Gruppi in cui dividere le attivita' secondo l'ordinamento scelto: [titolo, filtro].
+  // "Prima le mie": le tue in cima, poi quelle di chiunque, poi degli altri (Array.sort e' stabile).
+  function ownerRank(t) {
+    if (!state.mineFirst) return 0;
+    if (t.assigneeId === state.data.viewerId) return 0;
+    return t.assigneeId === null || t.assigneeId === undefined ? 1 : 2;
+  }
+  // Gruppi in cui dividere la lista delle attivita': con "Prima le mie" tue / di chiunque / degli altri.
   function taskGroups(tasks) {
-    var me = state.data.viewerId;
-    function byDue(a, b) { return new Date(a.dueAt) - new Date(b.dueAt); }
-    var sorted = tasks.slice().sort(byDue);
-    function mine(t) { return t.assigneeId === me; }
-    function anyone(t) { return t.assigneeId === null || t.assigneeId === undefined; }
-    var groups = [];
-    if (state.order === "mine") groups = [["Tue", mine], ["Di chiunque", anyone], ["Degli altri", function (t) { return !mine(t) && !anyone(t); }]];
-    else if (state.order === "mineany") groups = [["Tue e di chiunque", function (t) { return mine(t) || anyone(t); }], ["Degli altri", function (t) { return !mine(t) && !anyone(t); }]];
-    else return [{ title: null, tasks: sorted }];
-    return groups.map(function (g) { return { title: g[0], tasks: sorted.filter(g[1]) }; }).filter(function (g) { return g.tasks.length; });
+    var sorted = tasks.slice().sort(function (a, b) { return new Date(a.dueAt) - new Date(b.dueAt); });
+    if (!state.mineFirst) return [{ title: null, tasks: sorted }];
+    return [["Tue", 0], ["Di chiunque", 1], ["Degli altri", 2]].map(function (g) {
+      return { title: g[0], tasks: sorted.filter(function (t) { return ownerRank(t) === g[1]; }) };
+    }).filter(function (g) { return g.tasks.length; });
   }
 
-  function orderPicker() {
+  function orderToggle() {
     var seg = h("div", { class: "seg", role: "tablist" });
-    ORDERS.forEach(function (o) {
-      seg.appendChild(h("button", { class: state.order === o[0] ? "on" : "", onclick: function () {
-        state.order = o[0];
-        try { localStorage.setItem("taskOrder", o[0]); } catch (e) {}
+    [[false, "Tutte"], [true, "Prima le mie"]].forEach(function (o) {
+      seg.appendChild(h("button", { class: state.mineFirst === o[0] ? "on" : "", "aria-pressed": state.mineFirst === o[0] ? "true" : "false", onclick: function () {
+        state.mineFirst = o[0];
+        try { localStorage.setItem("taskOrder", o[0] ? "mine" : "all"); localStorage.removeItem("dlMine"); } catch (e) {}
         render();
       } }, o[1]));
     });
-    var hint = ORDERS.filter(function (o) { return o[0] === state.order; })[0][2];
-    return h("div", { style: "margin:10px 0 4px" }, seg, h("div", { class: "muted", style: "font-size:.8rem;margin-top:4px" }, hint));
+    return seg;
   }
 
   function viewTasks() {
@@ -799,7 +789,6 @@ const PAGE_TEMPLATE = `<!doctype html>
     });
     return h("div", {},
       state.adding ? taskForm(null) : h("button", { class: "primary", onclick: function () { state.adding = true; state.editing = null; render(); } }, "+ Nuova attivita'"),
-      state.data.tasks.length > 1 ? orderPicker() : null,
       items.length ? items : h("p", { class: "muted" }, "Nessuna attivita' ancora.")
     );
   }

@@ -16,8 +16,16 @@ describe("portale", () => {
     expect(html).not.toContain("tl-axis");
   });
 
-  it("Prossime scadenze ha il filtro 'Solo mie', ricordato nel browser", () => {
-    expect(html).toContain("Solo mie");
-    expect(html).toContain('localStorage.setItem("dlMine"');
+  it("un solo filtro 'Tutte' / 'Prima le mie' per tutto il portale, ricordato nel browser", () => {
+    expect(html).toContain("Prima le mie");
+    expect(html).not.toContain("Solo mie");
+    expect(html).not.toContain("Mie + chiunque");
+    expect(html).toContain('localStorage.setItem("taskOrder"');
+    expect(html.match(/function orderToggle/g)).toHaveLength(1);
+  });
+
+  it("la frequenza 'Ogni mese' si salva come mese", () => {
+    expect(html).toContain('value: "1 mese"');
+    expect(html).not.toContain('value: "30 giorni"');
   });
 });

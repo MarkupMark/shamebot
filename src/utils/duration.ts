@@ -2,6 +2,7 @@ const minuteMs = 60_000;
 const hourMs = 60 * minuteMs;
 const dayMs = 24 * hourMs;
 const weekMs = 7 * dayMs;
+const monthMs = 30 * dayMs;
 
 export function parseDurationInput(input: string): number | null {
   const cleaned = input.trim().toLowerCase();
@@ -19,7 +20,7 @@ export function parseDurationInput(input: string): number | null {
     return Math.round(periodMs / times);
   }
 
-  const compactMatch = cleaned.match(/^(\d+)\s*(m|min|mins|minute|minuti|h|hr|hrs|hour|ore|d|day|days|giorno|giorni|w|week|weeks|settimana|settimane)$/);
+  const compactMatch = cleaned.match(/^(\d+)\s*(m|min|mins|minute|minuti|h|hr|hrs|hour|ore|d|day|days|giorno|giorni|w|week|weeks|settimana|settimane|mese|mesi|month|months)$/);
   if (compactMatch) {
     const amount = Number(compactMatch[1]);
     const unit = compactMatch[2];
@@ -29,6 +30,11 @@ export function parseDurationInput(input: string): number | null {
   const parts = cleaned.split(/\s+/);
   if (parts.length === 2 && /^\d+$/.test(parts[0])) {
     return Number(parts[0]) * resolveUnitMs(parts[1]);
+  }
+
+  const monthly = cleaned.match(/^(?:ogni|1)\s+mese$|^mensile$|^mese$/);
+  if (monthly) {
+    return monthMs;
   }
 
   if (/^\d+$/.test(cleaned)) {
@@ -53,6 +59,11 @@ function resolveUnitMs(unit: string): number {
 
   if (["w", "week", "weeks", "settimana", "settimane"].includes(unit)) {
     return weekMs;
+  }
+
+  // Un "mese" vale 30 giorni: i periodi fissi lo trattano come mese di calendario (vedi periods.ts).
+  if (["mese", "mesi", "month", "months"].includes(unit)) {
+    return monthMs;
   }
 
   throw new Error(`Unita' non supportata: ${unit}`);
@@ -124,6 +135,11 @@ const weekDaysMs = 7 * dayMs;
  * 7 giorni -> "1 volta a settimana", 3.5 giorni -> "2 volte a settimana", altrimenti "ogni <durata>".
  */
 export function formatFrequency(intervalMs: number): string {
+  if (intervalMs >= monthMs && intervalMs % monthMs === 0) {
+    const months = intervalMs / monthMs;
+    return months === 1 ? "ogni mese" : `ogni ${months} mesi`;
+  }
+
   if (intervalMs >= weekDaysMs && intervalMs % weekDaysMs === 0) {
     const weeks = intervalMs / weekDaysMs;
     return weeks === 1 ? "1 volta a settimana" : `ogni ${weeks} settimane`;
@@ -157,6 +173,11 @@ export function formatShortDuration(ms: number): string {
 
 /** Frequenza compatta per i messaggi: "1×/sett", "2×/sett", "ogni 3g", "ogni giorno". */
 export function formatFrequencyShort(intervalMs: number): string {
+  if (intervalMs >= monthMs && intervalMs % monthMs === 0) {
+    const months = intervalMs / monthMs;
+    return months === 1 ? "ogni mese" : `ogni ${months} mesi`;
+  }
+
   if (intervalMs >= weekDaysMs && intervalMs % weekDaysMs === 0) {
     const weeks = intervalMs / weekDaysMs;
     return weeks === 1 ? "1×/sett" : `ogni ${weeks} sett`;

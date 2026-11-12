@@ -35,5 +35,5 @@ export const day = 24 * hour;
  * Per i test che con scadenze precise verificano altro (promemoria, assenze, spostamenti), non i periodi.
  */
 export async function anchorAtCreation(db: Db): Promise<void> {
-  await db.run("UPDATE tasks SET cycle_anchor_at = created_at");
+  await db.run("UPDATE tasks SET cycle_anchor_at = created_at, period_aligned = 1");
 }

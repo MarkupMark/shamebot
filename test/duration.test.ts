@@ -23,6 +23,17 @@ describe("duration", () => {
     expect(formatFrequency(Math.round((7 * day) / 3))).toBe("3 volte a settimana");
     expect(formatFrequency(14 * day)).toBe("ogni 2 settimane");
     expect(formatFrequency(4 * day)).toBe("ogni 4 giorni");
+    expect(formatFrequency(30 * day)).toBe("ogni mese");
+    expect(formatFrequency(60 * day)).toBe("ogni 2 mesi");
+    expect(formatFrequencyShort(30 * day)).toBe("ogni mese");
+  });
+
+  it("accetta 'ogni mese' e 'N mesi' (un mese = 30 giorni, cioe' un mese di calendario)", () => {
+    expect(parseDurationInput("1 mese")).toBe(30 * day);
+    expect(parseDurationInput("ogni mese")).toBe(30 * day);
+    expect(parseDurationInput("mensile")).toBe(30 * day);
+    expect(parseDurationInput("2 mesi")).toBe(60 * day);
+    expect(parseDurationInput("30 giorni")).toBe(30 * day);
   });
 
   it("formatta durate e frequenze in modo compatto", () => {

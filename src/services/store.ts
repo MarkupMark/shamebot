@@ -886,6 +886,40 @@ export class HouseStore {
     }));
   }
 
+  /**
+   * Porta sui periodi fissi le scadenze che non cadono a fine periodo (attivita' di prima dei periodi fissi):
+   * la scadenza diventa la fine del periodo che la contiene (es. settimanale: la domenica stessa o la successiva).
+   * Succede una volta sola per attivita' (colonna period_aligned): gli spostamenti successivi (fuori casa,
+   * spostamenti a mano) restano come sono. Le attivita' gia' in ritardo si riallineano al prossimo "Fatto".
+   * Restituisce quante attivita' sono state spostate.
+   */
+  async alignDeadlinesToPeriods(now: Date = new Date()): Promise<number> {
+    const rows = await this.db.all(`SELECT ${taskColumns} FROM tasks t ${taskJoins} WHERE t.period_aligned = 0`);
+    let moved = 0;
+    for (const task of rows.map(mapTask)) {
+      const due = getDueAt(task);
+      if (!task.slotDueAt && due.getTime() <= now.getTime()) {
+        continue; // in ritardo: ci pensa il prossimo "Fatto"
+      }
+      const aligned = periodAround(new Date(due.getTime() - 1), task.intervalMs, this.timezone).end;
+      if (task.slotDueAt || aligned.getTime() === due.getTime()) {
+        await this.db.run("UPDATE tasks SET period_aligned = 1 WHERE id = ?", [task.id]);
+        continue;
+      }
+      const after: Task = { ...task, cycleAnchorAt: new Date(aligned.getTime() - task.intervalMs).toISOString() };
+      const flags = rescheduleNoticeFlags(task, after, now, this.timezone);
+      await this.db.run(
+        `UPDATE tasks
+         SET cycle_anchor_at = ?, reminder_three_hours_sent_at = ?, reminder_thirty_minutes_sent_at = ?,
+             overdue_notice_sent_at = ?, nudge_sent_at = ?, period_aligned = 1
+         WHERE id = ?`,
+        [after.cycleAnchorAt, flags.three_hours, flags.thirty_minutes, flags.overdue, flags.nudge, task.id],
+      );
+      moved += 1;
+    }
+    return moved;
+  }
+
   async markNoticesHandled(taskId: number, stages: NoticeStageKey[], at: Date): Promise<void> {
     const columns: Record<NoticeStageKey, string> = {
       three_hours: "reminder_three_hours_sent_at",
