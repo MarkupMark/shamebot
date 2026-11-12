@@ -10,10 +10,20 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   Ogni persona che usa un comando nel gruppo entra tra i coinquilini.
 - **Attivita' condivise.** Ognuna ha nome, frequenza e gravita' (`poco importante`, `medio`, `importante`).
   Chiunque nella casa puo' aggiungerle, modificarle, eliminarle e segnarle come fatte.
-  Una modifica non fa mai scattare un ritardo: se si accorcia la frequenza la nuova scadenza e' al massimo
-  un ciclo da adesso (mai oltre la vecchia), e chi era gia' in ritardo non riceve un secondo avviso.
-- **Promemoria nel gruppo.** 3 ore e 30 minuti prima della scadenza, poi un messaggio a scadenza avvenuta.
-  Per `medio` e `importante` c'e' un secondo sollecito dopo 2 giorni / 1 giorno di ritardo.
+- **Periodi fissi.** La scadenza non riparte da quando si preme "Fatto": ogni frequenza ha finestre fisse a calendario
+  (fuso della casa) e si deve fare entro la fine della finestra. *Ogni giorno* = la giornata; *ogni settimana* =
+  lunedi'-domenica; *ogni N settimane* = blocchi fissi di N settimane; *ogni mese* = mese di calendario;
+  *2 volte a settimana* = lun-mer e gio-dom (3 volte = lun-mar, mer-gio, ven-dom); *2 / 3 volte al mese* = il mese
+  diviso in 2 o 3; sotto il giorno = finestre di ore dalla mezzanotte. Farla presto o tardi nella finestra non sposta
+  la prossima, e non si puo' chiudere in anticipo la finestra successiva ("già fatta per questo periodo · si riapre lun 16").
+  Se una finestra scade senza "Fatto" resta in ritardo finche' qualcuno non la fa; poi si deve comunque fare quella in corso.
+  Un'attivita' nuova scade a fine della finestra in corso (o della successiva se ne resta meno di un terzo).
+  Le scadenze di prima di questo cambio restano com'erano fino al primo "Fatto".
+  Una modifica non fa mai scattare un ritardo: se si cambia la frequenza si riparte dalla finestra in corso della
+  nuova frequenza, accorciando mai oltre la vecchia scadenza, e chi era gia' in ritardo non riceve un secondo avviso.
+- **Promemoria nel gruppo.** Per le attivita' di uno o piu' giorni: "⏰ scade oggi" alle 9 dell'ultimo giorno, poi
+  l'avviso di scadenza la mattina dopo alle 9 (di notte il bot non scrive). Per quelle di poche ore: 3 ore e 30 minuti
+  prima e poi a scadenza. Per `medio` e `importante` c'e' un secondo sollecito dopo 2 giorni / 1 giorno di ritardo.
   I messaggi citano chi ha fatto l'attivita' l'ultima volta.
 - **Assegnazione.** Ogni attivita' puo' toccare a: *chiunque* (predefinito), *solo un utente*, *a turno*
   (passa al prossimo della lista a ogni "Fatto") oppure *personalizzato*: una lista di turni, ognuno con una persona

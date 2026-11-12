@@ -19,23 +19,24 @@ describe("runDueChecks", () => {
       sent.push({ chatId, text });
     };
 
+    // Settimanale creata domenica mattina: scade alla fine della settimana dopo (domenica 8, mezzanotte).
     expect(await runDueChecks(store, send, new Date("2026-11-03T10:00:00.000Z"), first)).toBe(0);
 
+    // Ultimo giorno alle 9 (ora italiana): promemoria.
     expect(await runDueChecks(store, send, new Date("2026-11-08T08:00:00.000Z"), first)).toBe(1);
     expect(sent[0]?.chatId).toBe(-555);
-    expect(sent[0]?.text).toBe("⏰ Pulire il bagno · tra 3h");
+    expect(sent[0]?.text).toBe("⏰ Pulire il bagno · scade oggi");
 
     expect(await runDueChecks(store, send, new Date("2026-11-08T08:05:00.000Z"), first)).toBe(0);
+    // Mezzanotte e' passata ma di notte non si scrive nel gruppo.
+    expect(await runDueChecks(store, send, new Date("2026-11-09T02:00:00.000Z"), first)).toBe(0);
 
-    expect(await runDueChecks(store, send, new Date("2026-11-08T09:40:00.000Z"), first)).toBe(1);
-    expect(sent[1]?.text).toBe("⏰ Pulire il bagno · tra 30m");
+    expect(await runDueChecks(store, send, new Date("2026-11-09T08:30:00.000Z"), first)).toBe(1);
+    expect(sent[1]?.text).toBe("😬 Pulire il bagno · scaduta · ultima: Luca\nragazzi, Pulire il bagno è IMPORTANTE. Vergognati 🔔");
 
-    expect(await runDueChecks(store, send, new Date("2026-11-08T10:30:00.000Z"), first)).toBe(1);
-    expect(sent[2]?.text).toBe("😬 Pulire il bagno · scaduta · ultima: Luca\nragazzi, Pulire il bagno è IMPORTANTE. Vergognati 🔔");
-
-    expect(await runDueChecks(store, send, new Date("2026-11-09T11:00:00.000Z"), first)).toBe(1);
-    expect(sent[3]?.text).toBe("🚨 Pulire il bagno · ritardo 1g 1h · ultima: Luca\nragazzi, Pulire il bagno è IMPORTANTE. Vergognati 🔔");
-    expect(sent.length).toBe(4);
+    expect(await runDueChecks(store, send, new Date("2026-11-10T08:30:00.000Z"), first)).toBe(1);
+    expect(sent[2]?.text).toBe("🚨 Pulire il bagno · ritardo 1g 9h · ultima: Luca\nragazzi, Pulire il bagno è IMPORTANTE. Vergognati 🔔");
+    expect(sent.length).toBe(3);
   });
 
   it("riprova l'invio se Telegram fallisce", async () => {

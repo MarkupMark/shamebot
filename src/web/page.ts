@@ -110,6 +110,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   .dl-group.soft span:first-child { color: var(--muted); }
   .dl-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
   .dl-row:last-child { border-bottom: 0; }
+  .dl-row.done .dl-name { color: var(--muted); font-weight: 500; }
   .dl-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .dl-name { min-width: 0; font-size: .92rem; font-weight: 600; line-height: 1.2; }
   .dl-name small { display: block; font-size: .74rem; font-weight: 400; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -311,7 +312,9 @@ const PAGE_TEMPLATE = `<!doctype html>
   function dueInfo(task) {
     var left = new Date(task.dueAt).getTime() - Date.now();
     if (left < 0) return { cls: "due-late", text: "In ritardo di " + duration(left) };
-    return { cls: left < 6 * HOUR ? "due-soon" : "due-ok", text: "Entro " + duration(left) };
+    if (isClosed(task, Date.now())) return { cls: "due-ok", text: "✓ Fatta · si riapre " + dayLabel(new Date(task.startAt).getTime()), closed: true };
+    var text = task.intervalMs < DAY ? "Entro " + duration(left) : "Entro " + dayLabel(new Date(task.dueAt).getTime() - 1);
+    return { cls: left < DAY ? "due-soon" : "due-ok", text: text };
   }
   var SEVERITY = { low: "poco importante", medium: "medio", high: "importante" };
   function when(iso) {
@@ -347,6 +350,16 @@ const PAGE_TEMPLATE = `<!doctype html>
     return Math.round(hrs / 24) + "g";
   }
 
+  /** Periodi fissi: prima di startAt l'attivita' e' gia' fatta per questo periodo (si riapre a startAt). */
+  function isClosed(task, now) { return !task.paused && new Date(task.startAt).getTime() > now; }
+
+  /** "entro dom 15" (scadenza a fine giornata) oppure "entro le 18:00" per le attivita' di poche ore. */
+  function deadlineText(task) {
+    var due = new Date(task.dueAt).getTime();
+    if (task.intervalMs < DAY) return "entro le " + new Date(due).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+    return "entro " + dayLabel(due - 1);
+  }
+
   /** Gruppi in ordine: oggi, entro domenica, settimana prossima, fine mese, piu' avanti. */
   function dueGroups(now) {
     var today = startOfDay(now);
@@ -359,8 +372,8 @@ const PAGE_TEMPLATE = `<!doctype html>
     var list = [
       { key: "today", end: endToday, title: "Oggi", hint: "entro stasera", urgent: true },
       { key: "week", end: endWeek, title: "Entro domenica", hint: dayLabel(endWeek - 1), urgent: true },
-      { key: "next", end: endNext, title: "Entro " + dayLabel(endNext - 1), hint: "puoi gia' farla" },
-      { key: "month", end: endMonth, title: "Entro fine mese", hint: dayLabel(endMonth - 1) + " · puoi gia' farla" }
+      { key: "next", end: endNext, title: "Entro " + dayLabel(endNext - 1), hint: "settimana prossima" },
+      { key: "month", end: endMonth, title: "Entro fine mese", hint: dayLabel(endMonth - 1) }
     ].sort(function (a, b) { return a.end - b.end; });
     var out = [], last = now;
     list.forEach(function (g) { if (g.end > last) { out.push(g); last = g.end; } });
@@ -372,17 +385,18 @@ const PAGE_TEMPLATE = `<!doctype html>
     var due = new Date(task.dueAt).getTime();
     var start = new Date(task.startAt).getTime();
     var mine = task.assigneeId === state.data.viewerId;
-    var chipCls = "dl-who" + (mine ? " me" : "") + (kind === "late" ? " late" : kind === "soft" ? " soft" : "");
+    var chipCls = "dl-who" + (mine ? " me" : "") + (kind === "late" ? " late" : kind === "soft" || kind === "done" ? " soft" : "");
     var sub = kind === "late" ? "in ritardo di " + shortLeft(due - now)
       : kind === "paused" ? "in pausa · fuori casa"
-      : task.frequency + " · scade " + (due < addDays(startOfDay(now), 1) ? "alle " + new Date(due).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : dayLabel(due));
-    var row = h("div", { class: "dl-row", title: task.name + " - scade " + when(task.dueAt) },
+      : kind === "done" ? "fatta" + (task.lastCompletedByName ? " da " + task.lastCompletedByName : "") + " · si riapre " + dayLabel(start)
+      : task.frequency + " · " + deadlineText(task);
+    var row = h("div", { class: "dl-row" + (kind === "done" ? " done" : ""), title: task.name + " - scade " + when(task.dueAt) },
       h("div", { class: "dl-line" },
-        h("div", { class: "dl-name" }, task.name, h("small", {}, sub)),
+        h("div", { class: "dl-name" }, (kind === "done" ? "✓ " : "") + task.name, h("small", {}, sub)),
         h("span", { class: chipCls }, whoLabel(task))
       )
     );
-    if (kind !== "late" && kind !== "paused") {
+    if (kind !== "late" && kind !== "paused" && kind !== "done") {
       var frac = due > start ? Math.min(1, Math.max(0, (now - start) / (due - start))) : 1;
       var left = due - now;
       var cls = left < DAY ? "urgent" : left < 3 * DAY || frac > 0.7 ? "soon" : "ok";
@@ -396,7 +410,7 @@ const PAGE_TEMPLATE = `<!doctype html>
     var tasks = state.data.tasks.slice().sort(function (a, b) { return new Date(a.dueAt) - new Date(b.dueAt); });
     var late = tasks.filter(function (t) { return !t.paused && new Date(t.dueAt).getTime() < now; });
     var paused = tasks.filter(function (t) { return t.paused; });
-    var mineCount = tasks.filter(function (t) { return !t.paused && t.assigneeId === state.data.viewerId && new Date(t.dueAt).getTime() < addDays(now, 7); }).length;
+    var mineCount = tasks.filter(function (t) { return !t.paused && !isClosed(t, now) && t.assigneeId === state.data.viewerId && new Date(t.dueAt).getTime() < addDays(now, 7); }).length;
     var subtitle = late.length ? late.length + " in ritardo" : "Niente in ritardo";
     if (mineCount) subtitle += " · " + mineCount + " tocca" + (mineCount === 1 ? "" : "no") + " a te questa settimana";
 
@@ -413,17 +427,23 @@ const PAGE_TEMPLATE = `<!doctype html>
     }
 
     group("In ritardo", late.length === 1 ? "1 attivita'" : late.length + " attivita'", "late", late.map(function (t) { return dueRow(t, now, "late"); }));
+    // Una scadenza a mezzanotte appartiene al giorno prima (due - 1). Le attivita' gia' fatte per questo
+    // periodo stanno nel gruppo del periodo appena chiuso, con la spunta e la data in cui si riaprono.
     var open = tasks.filter(function (t) { return !t.paused && new Date(t.dueAt).getTime() >= now; });
-    var start = now;
+    var start = now - 1;
     dueGroups(now).forEach(function (g) {
-      var inGroup = open.filter(function (t) { var due = new Date(t.dueAt).getTime(); return due >= start && due < g.end; });
+      var inGroup = open.filter(function (t) {
+        var at = isClosed(t, now) ? new Date(t.startAt).getTime() - 1 : new Date(t.dueAt).getTime() - 1;
+        return at >= start && at < g.end;
+      });
+      inGroup.sort(function (a, b) { return (isClosed(a, now) ? 1 : 0) - (isClosed(b, now) ? 1 : 0); });
       start = g.end;
       if (g.key === "later" && inGroup.length && !state.tlExpanded) {
         card.appendChild(h("button", { class: "ghost dl-more", onclick: function () { state.tlExpanded = true; render(); } },
           "Piu' avanti (" + inGroup.length + ")"));
         return;
       }
-      group(g.title, g.hint, g.urgent ? "" : "soft", inGroup.map(function (t) { return dueRow(t, now, g.urgent ? "open" : "soft"); }));
+      group(g.title, g.hint, g.urgent ? "" : "soft", inGroup.map(function (t) { return dueRow(t, now, isClosed(t, now) ? "done" : g.urgent ? "open" : "soft"); }));
     });
     group("In pausa", "fuori casa", "soft", paused.map(function (t) { return dueRow(t, now, "paused"); }));
     if (state.tlExpanded) {
@@ -653,7 +673,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       ),
       h("div", { class: "row tight task-foot" },
         h("div", { class: "grow " + due.cls }, due.text),
-        h("button", { class: "primary", onclick: done }, "Fatto"),
+        due.closed ? null : h("button", { class: "primary", onclick: done }, "Fatto"),
         canSwap ? h("button", { class: "icon", title: "Scambia turno", "aria-label": "Chiedi di scambiare il turno", onclick: function () { askSwap(task); } }, "🔄") : null,
         h("button", { class: "icon", title: "Modifica", "aria-label": "Modifica", onclick: function () { state.editing = task.id; state.adding = false; render(); } }, "✏️"),
         h("button", { class: "icon danger ghost", title: "Elimina", "aria-label": "Elimina", onclick: remove }, "🗑")

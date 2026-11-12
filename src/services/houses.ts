@@ -11,12 +11,15 @@ import {
   swapRequestedMessage,
   toName,
   taskCompletedMessage,
+  tooEarlyMessage,
   taskCreatedMessage,
   taskDeletedMessage,
   taskRestoredMessage,
   taskUpdatedMessage,
   type SendToChat,
 } from "./notify.js";
+import { isTooEarly, windowStart } from "./periods.js";
+import { getDueAt } from "./policy.js";
 
 /** Modifica il testo di un messaggio gia' inviato (e ne toglie i pulsanti). */
 export type EditInChat = (chatId: number, messageId: number, text: string) => Promise<unknown>;
@@ -26,6 +29,9 @@ export class AbsenceError extends Error {}
 
 /** Errore "di regola" sugli scambi di turno, da mostrare cosi' com'e' all'utente. */
 export class SwapError extends Error {}
+
+/** "Fatto" su un'attivita' gia' fatta per questo periodo (la finestra successiva non e' ancora aperta). */
+export class TooEarlyError extends Error {}
 
 export type ChangeOptions = {
   /** Se true/false forza l'avviso al gruppo; se omesso vale l'impostazione della casa. */
@@ -268,10 +274,19 @@ export class HouseService {
   }
 
   /** Segna come fatta. `announce` = scrive l'annuncio nel gruppo (il bot in gruppo risponde da solo, il portale no). */
-  async completeTask(house: House, actor: AppUser, taskId: number, announce: boolean): Promise<Task | null> {
-    const task = await this.store.completeTask(house.id, taskId, actor.id, new Date());
+  async completeTask(house: House, actor: AppUser, taskId: number, announce: boolean, now: Date = new Date()): Promise<Task | null> {
+    const current = await this.store.getTask(house.id, taskId);
+    if (!current) {
+      return null;
+    }
+    const tz = this.store.timezone;
+    // Periodi fissi: farla in anticipo non chiude la finestra successiva.
+    if (!current.slotDueAt && isTooEarly(getDueAt(current), now, current.intervalMs, tz)) {
+      throw new TooEarlyError(tooEarlyMessage(current, windowStart(getDueAt(current), current.intervalMs, tz), tz));
+    }
+    const task = await this.store.completeTask(house.id, taskId, actor.id, now);
     if (task && announce) {
-      await safeSend(this.send, house.chatId, taskCompletedMessage(actor.displayName, task));
+      await safeSend(this.send, house.chatId, taskCompletedMessage(actor.displayName, task, tz));
     }
     return task;
   }

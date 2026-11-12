@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getDueAt } from "../src/services/policy.js";
-import { createTestStore, day } from "./helpers.js";
+import { anchorAtCreation, createTestStore, day } from "./helpers.js";
 
 async function setup() {
   const { store, db } = createTestStore();
@@ -17,9 +17,10 @@ const now = new Date("2026-11-03T10:00:00.000Z");
 
 describe("Centro di comando: sposta scadenze", () => {
   it("sposta solo le attivita' scelte, avanti o indietro, e scrive il registro", async () => {
-    const { store, house, luca } = await setup();
+    const { store, db, house, luca } = await setup();
     const bagno = await store.createTask(house.id, luca.id, "Bagno", 7 * day, "high", start);
     const cucina = await store.createTask(house.id, luca.id, "Cucina", 3 * day, "medium", start);
+    await anchorAtCreation(db);
 
     const later = await store.shiftTaskDeadlines(house.id, luca.id, [bagno.id], 3 * day, now);
     expect(later.map((task) => getDueAt(task).toISOString())).toEqual(["2026-11-11T10:00:00.000Z"]);
@@ -41,6 +42,7 @@ describe("Centro di comando: sposta scadenze", () => {
     const { house: other } = await store.getOrCreateHouse(-200, "Altra", luca.id);
     const foreign = await store.createTask(other.id, luca.id, "Altrui", 7 * day, "low", start);
     const mine = await store.createTask(house.id, luca.id, "Mia", 7 * day, "low", start);
+    await anchorAtCreation(db);
     await db.run("UPDATE tasks SET overdue_notice_sent_at = ?, nudge_sent_at = ? WHERE id = ?", [now.toISOString(), now.toISOString(), mine.id]);
 
     const shifted = await store.shiftTaskDeadlines(house.id, luca.id, [foreign.id, mine.id], day, now);

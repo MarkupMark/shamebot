@@ -10,7 +10,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const store = new HouseStore(createSqliteDb(appConfig.databasePath));
+  const store = new HouseStore(createSqliteDb(appConfig.databasePath), appConfig.defaultTimezone);
   const { bot, send } = createBotApp({
     store,
     botToken: appConfig.botToken,

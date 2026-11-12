@@ -23,6 +23,7 @@ import type {
 import type { Db, SqlParam, SqlRow } from "./db.js";
 import { describeTaskChanges } from "../utils/tasks.js";
 import { buildNoticeStages, getDueAt } from "./policy.js";
+import { dueAfterCompletion, firstDueAt, nextPeriod, periodAround } from "./periods.js";
 import { endOfLocalDay } from "./digest.js";
 
 export type TelegramIdentity = {
@@ -110,7 +111,11 @@ const logSelect = `
 `;
 
 export class HouseStore {
-  constructor(private readonly db: Db) {}
+  /** `timezone`: fuso delle case, decide dove iniziano e finiscono i periodi (giorno, settimana, mese). */
+  constructor(
+    private readonly db: Db,
+    readonly timezone: string = "Europe/Rome",
+  ) {}
 
   // ---- Utenti ----
 
@@ -575,10 +580,12 @@ export class HouseStore {
     assignment: AssignmentInput | null = null,
   ): Promise<Task> {
     const iso = now.toISOString();
+    // cycle_anchor_at = scadenza - frequenza: la scadenza e' la fine del periodo (vedi periods.ts).
+    const anchor = new Date(firstDueAt(now, intervalMs, this.timezone).getTime() - intervalMs).toISOString();
     const result = await this.db.run(
       `INSERT INTO tasks (owner_id, house_id, name, interval_ms, severity, cycle_anchor_at, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [userId, houseId, name, intervalMs, severity, iso, iso, iso],
+      [userId, houseId, name, intervalMs, severity, anchor, iso, iso],
     );
     if (assignment && assignment.mode !== "anyone") {
       await this.saveAssignment(result.lastRowId, assignment, now);
@@ -718,9 +725,9 @@ export class HouseStore {
     if (changes.length > 0) {
       const current = (await this.getTask(houseId, taskId)) as Task;
       const edited = { ...current, name, intervalMs, severity, cycleAnchorAt: before.cycleAnchorAt };
-      const cycleAnchorAt = rescheduleAnchor(before, edited, now);
+      const cycleAnchorAt = rescheduleAnchor(before, edited, now, this.timezone);
       const after = { ...edited, cycleAnchorAt };
-      const flags = rescheduleNoticeFlags(before, after, now);
+      const flags = rescheduleNoticeFlags(before, after, now, this.timezone);
       await this.db.run(
         `UPDATE tasks
          SET name = ?, interval_ms = ?, severity = ?, cycle_anchor_at = ?, updated_at = ?,
@@ -747,7 +754,10 @@ export class HouseStore {
     return { before, task: (await this.getTask(houseId, taskId)) as Task, changes };
   }
 
-  /** Segna l'attivita' come fatta da userId e fa ripartire il ciclo. */
+  /**
+   * Segna l'attivita' come fatta da userId. La scadenza passa alla fine del periodo successivo (periodi fissi:
+   * farla presto o tardi nella finestra non sposta la prossima). Vedi periods.ts.
+   */
   async completeTask(houseId: number, taskId: number, userId: number, completedAt: Date): Promise<Task | null> {
     const task = await this.getTask(houseId, taskId);
     if (!task) {
@@ -763,6 +773,11 @@ export class HouseStore {
         [iso, userId, taskId],
       );
     }
+    const tz = this.timezone;
+    const nextDue = task.slotDueAt
+      ? nextPeriod(periodAround(completedAt, task.intervalMs, tz), task.intervalMs, tz).end
+      : dueAfterCompletion(getDueAt(task), completedAt, task.intervalMs, tz);
+    const anchor = new Date(nextDue.getTime() - task.intervalMs).toISOString();
     await this.db.run(
       `UPDATE tasks
        SET cycle_anchor_at = ?, last_completed_by = ?, completed_count = completed_count + 1, updated_at = ?,
@@ -770,7 +785,7 @@ export class HouseStore {
            reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL,
            overdue_notice_sent_at = NULL, nudge_sent_at = NULL
        WHERE id = ? AND house_id = ?`,
-      [iso, userId, iso, taskId, houseId],
+      [anchor, userId, iso, taskId, houseId],
     );
     await this.addLog(houseId, userId, taskId, task.name, "done", null, completedAt);
     return await this.getTask(houseId, taskId);
@@ -1150,37 +1165,33 @@ export type { SqlParam };
  * Nuovo inizio del ciclo dopo una modifica (vedi HouseStore.updateTask). `after` e' l'attivita' gia' modificata
  * ma con il vecchio cycle_anchor_at. Con un turno personalizzato aperto la scadenza e' quella del turno.
  */
-function rescheduleAnchor(before: Task, after: Task, now: Date): string {
-  if (after.slotDueAt) {
-    return before.cycleAnchorAt;
+function rescheduleAnchor(before: Task, after: Task, now: Date, timezone: string): string {
+  if (after.slotDueAt || after.intervalMs === before.intervalMs) {
+    return before.cycleAnchorAt; // nome, gravita' o assegnazione: la scadenza non cambia
   }
   const oldDue = getDueAt(before).getTime();
-  const naiveDue = getDueAt(after).getTime();
-  let newDue: number;
-  if (naiveDue === oldDue || naiveDue > oldDue) {
-    newDue = naiveDue; // stessa scadenza o piu' tardi: nessun problema
-  } else if (oldDue <= now.getTime()) {
-    newDue = oldDue; // gia' in ritardo: il ritardo resta quello che era
-  } else {
-    // Scadenza anticipata: al massimo un ciclo intero da adesso, mai oltre la vecchia scadenza.
-    newDue = Math.min(oldDue, Math.max(naiveDue, now.getTime() + after.intervalMs));
-  }
+  // Gia' in ritardo: il ritardo resta quello che era. Altrimenti si riparte dal periodo in corso della nuova
+  // frequenza (o dal successivo se ne resta poco), senza mai far scattare un ritardo per colpa della modifica.
+  // Accorciando non si va mai oltre la vecchia scadenza; allungando non la si anticipa mai.
+  const fresh = firstDueAt(now, after.intervalMs, timezone).getTime();
+  const newDue =
+    oldDue <= now.getTime() ? oldDue : after.intervalMs < before.intervalMs ? Math.min(oldDue, fresh) : Math.max(oldDue, fresh);
   return new Date(newDue - after.intervalMs).toISOString();
 }
 
 type NoticeFlags = Record<NoticeStageKey, string | null>;
 
 /** Stato degli avvisi dopo una modifica: nessun avviso deve partire solo perche' l'attivita' e' stata modificata. */
-function rescheduleNoticeFlags(before: Task, after: Task, now: Date): NoticeFlags {
+function rescheduleNoticeFlags(before: Task, after: Task, now: Date, timezone: string): NoticeFlags {
   const sent: NoticeFlags = {
     three_hours: before.reminderThreeHoursSentAt,
     thirty_minutes: before.reminderThirtyMinutesSentAt,
     overdue: before.overdueNoticeSentAt,
     nudge: before.nudgeSentAt,
   };
-  const oldAt = new Map(buildNoticeStages(before).map((stage) => [stage.key, stage.at.getTime()]));
+  const oldAt = new Map(buildNoticeStages(before, timezone).map((stage) => [stage.key, stage.at.getTime()]));
   const result: NoticeFlags = { three_hours: null, thirty_minutes: null, overdue: null, nudge: null };
-  for (const stage of buildNoticeStages(after)) {
+  for (const stage of buildNoticeStages(after, timezone)) {
     if (stage.at.getTime() > now.getTime()) {
       continue; // nel futuro: partira' a tempo debito
     }

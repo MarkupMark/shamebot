@@ -94,7 +94,8 @@ function buildData() {
           { id: 2, userId: 1, userName: "Tu", kind: "day", startsAt: iso(10 * D), dueAt: iso(11 * D) },
         ],
       }),
-      task(5, "Superfici cucina", 6.6 * D),
+      // Gia' fatta per questo periodo: si riapre tra 2 giorni (periodi fissi).
+      task(5, "Superfici cucina", 9 * D, { startAt: iso(2 * D), lastCompletedByName: "Marco" }),
       task(6, "Vetri", 19 * D, { assignMode: "single", assignUserIds: [1], assigneeId: 1, assigneeName: "Tu" }),
       task(7, "Frigo", 52 * D),
     ] as Array<ReturnType<typeof task>>).map((t) => ({

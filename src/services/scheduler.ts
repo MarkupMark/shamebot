@@ -25,7 +25,7 @@ export async function runDueChecks(
       continue;
     }
 
-    const due = getDueNotice(task, now);
+    const due = getDueNotice(task, now, store.timezone);
     if (!due) {
       continue;
     }

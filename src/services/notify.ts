@@ -3,6 +3,13 @@ import { formatFrequencyShort, formatShortDuration } from "../utils/duration.js"
 import { severityToItalian } from "../utils/labels.js";
 import { getDueAt } from "./policy.js";
 
+const dayMs = 24 * 60 * 60 * 1000;
+
+/** "dom 22": l'ultimo giorno utile per una scadenza a fine periodo (mezzanotte = fine del giorno prima). */
+export function deadlineDay(dueAt: Date, timezone = "Europe/Rome"): string {
+  return new Intl.DateTimeFormat("it-IT", { timeZone: timezone, weekday: "short", day: "numeric" }).format(new Date(dueAt.getTime() - 1));
+}
+
 /** Pulsanti sotto un messaggio: righe di [testo, dato del callback]. */
 export type MessageButtons = Array<Array<{ text: string; data: string }>>;
 
@@ -29,19 +36,25 @@ export async function sendAndGetId(send: SendToChat, chatId: number, text: strin
 export const compactTaskCount = 5;
 
 /** Riga compatta per /attivita: solo nome ed entro quando va fatta. */
-export function formatTaskBullet(task: Task, now: Date, away: Set<number> = new Set()): string {
+export function formatTaskBullet(task: Task, now: Date, away: Set<number> = new Set(), timezone = "Europe/Rome"): string {
   if (task.assigneeId !== null && away.has(task.assigneeId)) {
     return `• ${task.name} · ⏸ in pausa, ${task.assigneeName} è fuori casa`;
   }
-  const leftMs = getDueAt(task).getTime() - now.getTime();
-  const state = leftMs < 0 ? `⚠️ in ritardo di ${formatShortDuration(leftMs)}` : `entro ${formatShortDuration(leftMs)}`;
+  const dueAt = getDueAt(task);
+  const leftMs = dueAt.getTime() - now.getTime();
+  const state =
+    leftMs < 0
+      ? `⚠️ in ritardo di ${formatShortDuration(leftMs)}`
+      : task.intervalMs >= dayMs
+        ? `entro ${deadlineDay(dueAt, timezone)}`
+        : `entro ${formatShortDuration(leftMs)}`;
   return `• ${task.name} · ${state}`;
 }
 
 /** Elenco puntato delle attivita' (gia' ordinate per scadenza); `limit` taglia alle prime N. */
-export function formatTaskList(tasks: Task[], now: Date, limit?: number, away: Set<number> = new Set()): string {
+export function formatTaskList(tasks: Task[], now: Date, limit?: number, away: Set<number> = new Set(), timezone = "Europe/Rome"): string {
   const shown = limit === undefined ? tasks : tasks.slice(0, limit);
-  return shown.map((task) => formatTaskBullet(task, now, away)).join("\n");
+  return shown.map((task) => formatTaskBullet(task, now, away, timezone)).join("\n");
 }
 
 export function taskCreatedMessage(actorName: string, task: Task): string {
@@ -61,10 +74,18 @@ export function taskRestoredMessage(actorName: string, task: Task): string {
   return `♻️ ${actorName}: ${task.name} · ${formatFrequencyShort(task.intervalMs)}`;
 }
 
-export function taskCompletedMessage(actorName: string, task: Task): string {
-  const next = Math.max(0, getDueAt(task).getTime() - Date.now());
+export function taskCompletedMessage(actorName: string, task: Task, timezone = "Europe/Rome"): string {
   const who = task.assigneeName ? ` · tocca a ${task.assigneeName}` : "";
+  if (task.intervalMs >= dayMs) {
+    return `✅ ${actorName}: ${task.name} · prossima entro ${deadlineDay(getDueAt(task), timezone)}${who}`;
+  }
+  const next = Math.max(0, getDueAt(task).getTime() - Date.now());
   return `✅ ${actorName}: ${task.name} · prossima tra ${formatShortDuration(next || task.intervalMs)}${who}`;
+}
+
+/** "Fatto" quando la finestra successiva non e' ancora aperta. */
+export function tooEarlyMessage(task: Pick<Task, "name">, opensAt: Date, timezone = "Europe/Rome"): string {
+  return `👌 ${task.name} è già fatta per questo periodo · si riapre ${deadlineDay(new Date(opensAt.getTime() + 1), timezone)}`;
 }
 
 export function awayRequestedMessage(name: string): string {
@@ -111,7 +132,7 @@ export function noticeMessage(task: Task, stage: NoticeStageKey, now: Date): str
 
   switch (stage) {
     case "three_hours":
-      return `⏰ ${task.name} · tra 3h${who}`;
+      return task.intervalMs >= dayMs ? `⏰ ${task.name} · scade oggi${who}` : `⏰ ${task.name} · tra 3h${who}`;
     case "thirty_minutes":
       return `⏰ ${task.name} · tra 30m${who}`;
     case "overdue":

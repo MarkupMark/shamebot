@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { HouseService } from "../src/services/houses.js";
+import { HouseService, TooEarlyError } from "../src/services/houses.js";
 import { formatLogEntry, groupCommands, parseFields, privateCommands } from "../src/bot/handlers.js";
 import { createTestStore, day } from "./helpers.js";
+
+/** Ora italiana (novembre = UTC+1). */
+const rome = (local: string) => new Date(`${local}+01:00`);
 
 async function setup() {
   const { store } = createTestStore();
@@ -57,12 +60,24 @@ describe("HouseService", () => {
   });
 
   it("annuncia il completamento solo se richiesto", async () => {
-    const { service, luca, house, messages } = await setup();
-    const { task } = await service.createTask(house, luca, { name: "Bagno", intervalMs: 7 * day, severity: "medium" }, { notify: false });
-    await service.completeTask(house, luca, task.id, false);
+    const { service, store, luca, house, messages } = await setup();
+    const task = await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium", rome("2026-11-09T10:00:00"));
+    await service.completeTask(house, luca, task.id, false, rome("2026-11-10T10:00:00"));
     expect(messages).toEqual([]);
-    await service.completeTask(house, luca, task.id, true);
-    expect(messages[0]).toBe("✅ Luca: Bagno · prossima tra 7g");
+    await service.completeTask(house, luca, task.id, true, rome("2026-11-17T10:00:00"));
+    expect(messages[0]).toBe("✅ Luca: Bagno · prossima entro dom 29");
+  });
+
+  it("gia' fatta per questo periodo: non chiude in anticipo la finestra dopo", async () => {
+    const { service, store, luca, house, messages } = await setup();
+    const task = await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium", rome("2026-11-09T10:00:00"));
+    await service.completeTask(house, luca, task.id, true, rome("2026-11-10T10:00:00"));
+    await expect(service.completeTask(house, luca, task.id, true, rome("2026-11-12T10:00:00"))).rejects.toBeInstanceOf(TooEarlyError);
+    await expect(service.completeTask(house, luca, task.id, true, rome("2026-11-12T10:00:00"))).rejects.toThrow(
+      "👌 Bagno è già fatta per questo periodo · si riapre lun 16",
+    );
+    expect(messages).toEqual(["✅ Luca: Bagno · prossima entro dom 22"]);
+    expect((await store.getTask(house.id, task.id))?.completedCount).toBe(1);
   });
 });
 

@@ -67,7 +67,8 @@ describe("Assegnazione attivita'", () => {
 
     const afterAll = await store.completeTask(house.id, task.id, anna.id, new Date("2026-12-05T10:00:00.000Z"));
     expect(afterAll?.assigneeId).toBeNull();
-    expect(getDueAt(afterAll!).toISOString()).toBe(new Date(new Date("2026-12-05T10:00:00.000Z").getTime() + 30 * day).toISOString());
+    // Turni finiti: torna mensile a periodi fissi; dicembre e' fatto, la prossima e' entro fine gennaio.
+    expect(getDueAt(afterAll!).toISOString()).toBe("2027-01-31T23:00:00.000Z");
   });
 
   it("registra il cambio di assegnazione nel registro", async () => {

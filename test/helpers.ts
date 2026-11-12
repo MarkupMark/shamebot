@@ -29,3 +29,11 @@ export function createTestStore(): { store: HouseStore; db: Db } {
 
 export const hour = 3_600_000;
 export const day = 24 * hour;
+
+/**
+ * Riporta le scadenze al vecchio calcolo "creazione + frequenza" (al posto della fine del periodo).
+ * Per i test che con scadenze precise verificano altro (promemoria, assenze, spostamenti), non i periodi.
+ */
+export async function anchorAtCreation(db: Db): Promise<void> {
+  await db.run("UPDATE tasks SET cycle_anchor_at = created_at");
+}

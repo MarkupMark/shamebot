@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getDueAt } from "../src/services/policy.js";
 import { createTestStore, day } from "./helpers.js";
 
 async function setup() {
@@ -46,12 +47,13 @@ describe("HouseStore", () => {
   it("completa un'attivita', ricorda chi l'ha fatta e scrive il registro", async () => {
     const { store, luca, anna } = await setup();
     const { house } = await store.getOrCreateHouse(-100, "Casa", luca.id);
-    const task = await store.createTask(house.id, luca.id, "Umido", 4 * day, "high", new Date("2026-11-05T10:00:00.000Z"));
+    const task = await store.createTask(house.id, luca.id, "Umido", 7 * day, "high", new Date("2026-11-03T10:00:00.000Z"));
+    expect(getDueAt(task).toISOString()).toBe("2026-11-08T23:00:00.000Z"); // fine settimana (lun 9, 00:00 a Roma)
 
     const done = await store.completeTask(house.id, task.id, anna.id, new Date("2026-11-06T10:00:00.000Z"));
     expect(done?.lastCompletedByName).toBe("Anna");
     expect(done?.completedCount).toBe(1);
-    expect(done?.cycleAnchorAt).toBe("2026-11-06T10:00:00.000Z");
+    expect(getDueAt(done!).toISOString()).toBe("2026-11-15T23:00:00.000Z"); // la settimana dopo, non "7 giorni da ora"
 
     const log = await store.listLog(house.id);
     expect(log.map((entry) => [entry.kind, entry.userName])).toEqual([["done", "Anna"], ["created", "Luca"]]);

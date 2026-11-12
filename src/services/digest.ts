@@ -1,6 +1,7 @@
 import type { DigestKind, DigestSettings, House, Task } from "../types/domain.js";
 import type { HouseStore } from "./store.js";
 import { getDueAt } from "./policy.js";
+import { isTooEarly } from "./periods.js";
 import { safeSend, type SendToChat } from "./notify.js";
 import { formatShortDuration } from "../utils/duration.js";
 import { sortTasksByDueDate } from "../utils/tasks.js";
@@ -17,43 +18,10 @@ const morningSuggestions = 3;
 const lateGraceMs = 60 * 60 * 1000;
 const dayMs = 24 * 60 * 60 * 1000;
 
-// ---- Fuso orario ----
+// ---- Fuso orario (in utils/timezone.ts) ----
 
-type LocalParts = { date: string; minutes: number };
-
-/** Data locale (YYYY-MM-DD) e minuti dalla mezzanotte locale nel fuso indicato. */
-export function localParts(at: Date, timezone: string): LocalParts {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat("en-CA", {
-      timeZone: timezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    })
-      .formatToParts(at)
-      .map((part) => [part.type, part.value]),
-  );
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, minutes: Number(parts.hour) * 60 + Number(parts.minute) };
-}
-
-/** Istante della mezzanotte locale del giorno di `at` (gestisce l'ora legale ricalcolando lo scarto). */
-export function localMidnight(at: Date, timezone: string): Date {
-  const { minutes } = localParts(at, timezone);
-  const guess = new Date(at.getTime() - minutes * 60_000);
-  const drift = localParts(guess, timezone).minutes;
-  // Se nel frattempo c'e' stato un cambio d'ora la "mezzanotte" stimata cade alle 23 o all'1: correggi.
-  const fix = drift === 0 ? 0 : drift > 12 * 60 ? (24 * 60 - drift) * 60_000 : -drift * 60_000;
-  return new Date(Math.floor((guess.getTime() + fix) / 60_000) * 60_000);
-}
-
-/** Fine della giornata locale di `at` (mezzanotte successiva). */
-export function endOfLocalDay(at: Date, timezone: string): Date {
-  const midnight = localMidnight(at, timezone);
-  return localMidnight(new Date(midnight.getTime() + dayMs + 2 * 60 * 60 * 1000), timezone);
-}
+export { endOfLocalDay, localMidnight, localParts } from "../utils/timezone.js";
+import { localMidnight, localParts } from "../utils/timezone.js";
 
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(":").map(Number);
@@ -62,6 +30,11 @@ function timeToMinutes(time: string): number {
 
 function clock(at: Date, timezone: string): string {
   return new Intl.DateTimeFormat("it-IT", { timeZone: timezone, hour: "2-digit", minute: "2-digit" }).format(at);
+}
+
+/** "entro le 18:00", oppure "entro fine giornata" per le scadenze a mezzanotte (fine del periodo). */
+function until(at: Date, timezone: string): string {
+  return localParts(at, timezone).minutes === 0 ? "entro fine giornata" : `entro le ${clock(at, timezone)}`;
 }
 
 // ---- Testo ----
@@ -102,32 +75,36 @@ export function buildDigest(
 
   if (kind === "morning") {
     const late = sorted.filter((task) => getDueAt(task) < now);
-    const today = sorted.filter((task) => getDueAt(task) >= now && getDueAt(task) < endOfToday);
-    const tomorrow = sorted.filter((task) => getDueAt(task) >= endOfToday && getDueAt(task) < endOfTomorrow);
-    const later = sorted.filter((task) => getDueAt(task) >= endOfTomorrow).slice(0, morningSuggestions);
+    // Una scadenza a mezzanotte (fine periodo) conta per il giorno che finisce: "<=" e ">".
+    const today = sorted.filter((task) => getDueAt(task) >= now && getDueAt(task) <= endOfToday);
+    const tomorrow = sorted.filter((task) => getDueAt(task) > endOfToday && getDueAt(task) <= endOfTomorrow);
+    // Tra i suggerimenti solo quelle che si possono gia' fare (non quelle gia' fatte per questo periodo).
+    const later = sorted
+      .filter((task) => getDueAt(task) > endOfTomorrow && !isTooEarly(getDueAt(task), now, task.intervalMs, timezone))
+      .slice(0, morningSuggestions);
     if (late.length) {
       sections.push(["In ritardo", ...late.map((t) => `• ${t.name} · da ${formatShortDuration(now.getTime() - getDueAt(t).getTime())}${who(t)}`)].join("\n"));
     }
     if (today.length) {
-      sections.push(["Oggi", ...today.map((t) => `• ${t.name} · entro le ${clock(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
+      sections.push(["Oggi", ...today.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
     }
     if (tomorrow.length) {
-      sections.push(["Domani", ...tomorrow.map((t) => `• ${t.name} · entro le ${clock(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
+      sections.push(["Domani", ...tomorrow.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
     }
     empty = sections.length === 0;
     if (empty) {
       sections.push("Oggi e domani niente in scadenza 🎉");
     }
     if (later.length) {
-      sections.push(["Se vuoi fare altro oggi:", ...later.map((t) => `• ${t.name} · entro ${dayLabel(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
+      sections.push(["Se vuoi fare altro oggi:", ...later.map((t) => `• ${t.name} · entro ${dayLabel(new Date(getDueAt(t).getTime() - 1), timezone)}${who(t)}`)].join("\n"));
     }
   } else {
-    const tomorrow = sorted.filter((task) => getDueAt(task) >= endOfToday && getDueAt(task) < endOfTomorrow);
+    const tomorrow = sorted.filter((task) => getDueAt(task) > endOfToday && getDueAt(task) <= endOfTomorrow);
     empty = tomorrow.length === 0;
     sections.push(
       empty
         ? "Domani niente in scadenza 🎉"
-        : ["Domani", ...tomorrow.map((t) => `• ${t.name} · entro le ${clock(getDueAt(t), timezone)}${who(t)}`)].join("\n"),
+        : ["Domani", ...tomorrow.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t)}`)].join("\n"),
     );
   }
 

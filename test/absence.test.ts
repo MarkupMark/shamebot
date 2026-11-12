@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { getDueAt } from "../src/services/policy.js";
 import { runDueChecks } from "../src/services/scheduler.js";
 import { AbsenceError, HouseService } from "../src/services/houses.js";
-import { createTestStore, day, hour } from "./helpers.js";
+import { anchorAtCreation, createTestStore, day, hour } from "./helpers.js";
 
 const tz = "Europe/Rome";
 const first = <T>(items: T[]) => items[0];
 
 async function setup() {
-  const { store } = createTestStore();
+  const { store, db } = createTestStore();
   const luca = await store.upsertUser({ telegramId: 1, username: "luca", displayName: "Luca" });
   const anna = await store.upsertUser({ telegramId: 2, username: null, displayName: "Anna" });
   const { house } = await store.getOrCreateHouse(-100, "Casa", luca.id);
@@ -24,7 +24,7 @@ async function setup() {
     },
     async (_chatId, _messageId, text) => void edits.push(text),
   );
-  return { store, house, luca, anna, service, sent, edits };
+  return { store, db, house, luca, anna, service, sent, edits };
 }
 
 describe("Fuori casa", () => {
@@ -68,12 +68,13 @@ describe("Fuori casa", () => {
   });
 
   it("al rientro: scadute durante l'assenza -> oggi; le altre slittano dei giorni di assenza", async () => {
-    const { store, house, luca, anna } = await setup();
+    const { store, db, house, luca, anna } = await setup();
     const created = new Date("2026-11-01T09:00:00.000Z");
     const late = await store.createTask(house.id, luca.id, "Gia' in ritardo", day, "low", new Date("2026-10-30T09:00:00.000Z"), null, { mode: "single", userIds: [luca.id] });
     const during = await store.createTask(house.id, luca.id, "Bagno", 2 * day, "high", created, null, { mode: "single", userIds: [luca.id] });
     const after = await store.createTask(house.id, luca.id, "Vetri", 10 * day, "low", created, null, { mode: "single", userIds: [luca.id] });
     const others = await store.createTask(house.id, luca.id, "Umido", 2 * day, "high", created, null, { mode: "single", userIds: [anna.id] });
+    await anchorAtCreation(db);
 
     const leave = new Date("2026-11-02T09:00:00.000Z");
     const back = new Date("2026-11-06T15:00:00.000Z"); // 16:00 a Roma, 4 giorni e 6 ore dopo

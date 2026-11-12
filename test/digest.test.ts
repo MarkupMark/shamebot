@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { buildDigest, localMidnight, localParts, runDigests } from "../src/services/digest.js";
-import { createTestStore, day, hour } from "./helpers.js";
+import { anchorAtCreation, createTestStore, day, hour } from "./helpers.js";
 
 const tz = "Europe/Rome";
 
 async function setup() {
-  const { store } = createTestStore();
+  const { store, db } = createTestStore();
   const luca = await store.upsertUser({ telegramId: 1, username: "luca", displayName: "Luca" });
   const { house } = await store.getOrCreateHouse(-100, "Casa", luca.id);
   await store.addMember(house.id, luca.id);
-  return { store, house, luca };
+  return { store, house, luca, db };
 }
 
 function collector() {
@@ -31,7 +31,7 @@ describe("Fuso orario", () => {
 
 describe("Testo dei promemoria", () => {
   it("buongiorno: ritardi, scadenze di oggi e domani e le prossime 3 se vuoi portarti avanti", async () => {
-    const { store, house, luca } = await setup();
+    const { store, house, luca, db } = await setup();
     const now = new Date("2026-11-06T08:00:00.000Z"); // venerdi' 6, 09:00 a Roma
     await store.createTask(house.id, luca.id, "Umido", day, "high", new Date(now.getTime() - day - 5 * hour));
     await store.createTask(house.id, luca.id, "Lavatrice", 9 * hour, "medium", now, null, { mode: "single", userIds: [luca.id] });
@@ -41,6 +41,7 @@ describe("Testo dei promemoria", () => {
     await store.createTask(house.id, luca.id, "Frigo", 30 * day, "low", now); // domenica 6 dicembre
     await store.createTask(house.id, luca.id, "Forno", 40 * day, "low", now); // oltre le prime 3
 
+    await anchorAtCreation(db);
     const message = buildDigest("morning", { intro: "Sveglia!" }, await store.listTasks(house.id), now, tz);
     expect(message.empty).toBe(false);
     expect(message.text).toBe(
@@ -65,20 +66,22 @@ describe("Testo dei promemoria", () => {
   });
 
   it("buongiorno con una scadenza domani sera: parte con un giorno di anticipo", async () => {
-    const { store, house, luca } = await setup();
+    const { store, house, luca, db } = await setup();
     const now = new Date("2026-11-06T08:00:00.000Z"); // venerdi' 6, 09:00 a Roma
     await store.createTask(house.id, luca.id, "Bagno", day + 7 * hour, "medium", now); // sabato 16:00
 
+    await anchorAtCreation(db);
     const message = buildDigest("morning", { intro: null }, await store.listTasks(house.id), now, tz);
     expect(message.empty).toBe(false);
     expect(message.text).toBe(["☀️ Buongiorno! Ecco cosa c'è da fare oggi", "", "Domani", "• Bagno · entro le 16:00"].join("\n"));
   });
 
   it("buongiorno senza nulla di oggi o domani: e' 'vuoto' ma suggerisce comunque le prossime", async () => {
-    const { store, house, luca } = await setup();
+    const { store, house, luca, db } = await setup();
     const now = new Date("2026-11-06T08:00:00.000Z");
     await store.createTask(house.id, luca.id, "Bagno", 5 * day, "medium", now);
 
+    await anchorAtCreation(db);
     const message = buildDigest("morning", { intro: null }, await store.listTasks(house.id), now, tz);
     expect(message.empty).toBe(true);
     expect(message.text).toBe(
@@ -87,12 +90,13 @@ describe("Testo dei promemoria", () => {
   });
 
   it("serale: solo cosa dovrai fare domani, senza ritardi ne' cose fatte oggi", async () => {
-    const { store, house, luca } = await setup();
+    const { store, house, luca, db } = await setup();
     const now = new Date("2026-11-06T20:00:00.000Z"); // 21:00 a Roma
     await store.createTask(house.id, luca.id, "Umido", day, "high", new Date("2026-11-04T10:00:00.000Z")); // in ritardo
     await store.createTask(house.id, luca.id, "Lavatrice", day, "medium", new Date("2026-11-06T09:00:00.000Z")); // domani 10:00
     await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium", now); // tra una settimana
 
+    await anchorAtCreation(db);
     const message = buildDigest("evening", { intro: null }, await store.listTasks(house.id), now, tz);
     expect(message).toEqual({ text: ["🌙 Ecco cosa dovrai fare domani", "", "Domani", "• Lavatrice · entro le 10:00"].join("\n"), empty: false });
 
@@ -103,9 +107,23 @@ describe("Testo dei promemoria", () => {
   });
 });
 
+describe("Buongiorno con i periodi fissi", () => {
+  it("scadenza a fine settimana: domenica e' 'Oggi', e le gia' fatte non sono suggerite", async () => {
+    const { store, house, luca } = await setup();
+    const bagno = await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium", new Date("2026-11-09T09:00:00.000Z")); // lun 9
+    const vetri = await store.createTask(house.id, luca.id, "Vetri", 7 * day, "low", new Date("2026-11-09T09:00:00.000Z"));
+    await store.completeTask(house.id, vetri.id, luca.id, new Date("2026-11-10T09:00:00.000Z")); // fatta: si riapre lun 16
+    expect(bagno.id).toBeGreaterThan(0);
+
+    const sunday = new Date("2026-11-15T08:00:00.000Z"); // dom 15, 09:00 a Roma
+    const message = buildDigest("morning", { intro: null }, await store.listTasks(house.id), sunday, tz);
+    expect(message.text).toBe(["☀️ Buongiorno! Ecco cosa c'è da fare oggi", "", "Oggi", "• Bagno · entro fine giornata"].join("\n"));
+  });
+});
+
 describe("runDigests", () => {
   it("invia il buongiorno una sola volta al giorno all'orario impostato", async () => {
-    const { store, house, luca } = await setup();
+    const { store, house, luca, db } = await setup();
     await store.createTask(house.id, luca.id, "Lavatrice", 9 * hour, "medium", new Date("2026-11-06T07:00:00.000Z"));
     const { sent, send } = collector();
 
@@ -118,7 +136,7 @@ describe("runDigests", () => {
   });
 
   it("salta i giorni vuoti e quelli in cui l'orario e' passato da oltre un'ora", async () => {
-    const { store, house, luca } = await setup();
+    const { store, house, luca, db } = await setup();
     const { sent, send } = collector();
 
     // Nessuna attivita': non parte, ma il giorno e' gestito.

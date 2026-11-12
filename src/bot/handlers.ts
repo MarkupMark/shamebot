@@ -2,7 +2,7 @@ import { Bot, InlineKeyboard } from "grammy";
 import type { Context } from "grammy";
 import type { AppUser, House, LogEntry, WebLoginRequest } from "../types/domain.js";
 import type { HouseStore } from "../services/store.js";
-import { AbsenceError, HouseService, SwapError, type EditInChat } from "../services/houses.js";
+import { AbsenceError, HouseService, SwapError, TooEarlyError, type EditInChat } from "../services/houses.js";
 import { compactTaskCount, formatTaskList, safeSend, type SendToChat } from "../services/notify.js";
 import { formatFrequencyShort, parseDurationInput } from "../utils/duration.js";
 import { severityFromItalian, severityToItalian } from "../utils/labels.js";
@@ -143,7 +143,7 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     const now = new Date();
     const hidden = tasks.length - compactTaskCount;
     const away = await store.awayUserIds(house.id);
-    await ctx.reply(formatTaskList(tasks, now, compactTaskCount, away), {
+    await ctx.reply(formatTaskList(tasks, now, compactTaskCount, away, timezone), {
       ...(hidden > 0 ? { reply_markup: new InlineKeyboard().text(`Mostra altre ${hidden}`, "tasks:all") } : {}),
     });
   }
@@ -338,7 +338,12 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
       return;
     }
 
-    await service.completeTask(resolved.house, resolved.user, task.id, true);
+    try {
+      await service.completeTask(resolved.house, resolved.user, task.id, true);
+    } catch (error) {
+      if (!(error instanceof TooEarlyError)) throw error;
+      await ctx.reply(error.message);
+    }
   });
 
   bot.callbackQuery(/^done:(\d+)$/, async (ctx) => {
@@ -348,7 +353,14 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
       return;
     }
 
-    const task = await service.completeTask(resolved.house, resolved.user, Number(ctx.match[1]), true);
+    let task;
+    try {
+      task = await service.completeTask(resolved.house, resolved.user, Number(ctx.match[1]), true);
+    } catch (error) {
+      if (!(error instanceof TooEarlyError)) throw error;
+      await ctx.answerCallbackQuery({ text: error.message, show_alert: true });
+      return;
+    }
     await ctx.answerCallbackQuery({ text: task ? "✓" : "Attività non trovata" });
     if (task) {
       await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => undefined);
@@ -373,7 +385,7 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
           ? new InlineKeyboard().text("Mostra meno", "tasks:short")
           : new InlineKeyboard().text(`Mostra altre ${hidden}`, "tasks:all");
     const away = await store.awayUserIds(resolved.house.id);
-    const text = tasks.length ? formatTaskList(tasks, new Date(), all ? undefined : compactTaskCount, away) : "Nessuna attività.";
+    const text = tasks.length ? formatTaskList(tasks, new Date(), all ? undefined : compactTaskCount, away, timezone) : "Nessuna attività.";
     await ctx.editMessageText(text, keyboard ? { reply_markup: keyboard } : {}).catch(() => undefined);
   });
 

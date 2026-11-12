@@ -13,7 +13,8 @@ import { defaultInsults, maxInsultLength, maxInsultsPerSeverity } from "./servic
 import { getDueAt } from "./services/policy.js";
 import { verifyTelegramMiniAppInitData } from "./services/web-auth.js";
 import { renderAppPage } from "./web/page.js";
-import { AbsenceError, SwapError } from "./services/houses.js";
+import { AbsenceError, SwapError, TooEarlyError } from "./services/houses.js";
+import { windowStart } from "./services/periods.js";
 import { renderContributePage } from "./web/contribute.js";
 import { renderAdminPage } from "./web/admin.js";
 import { formatFrequency, parseDurationInput } from "./utils/duration.js";
@@ -47,7 +48,7 @@ class HttpError extends Error {
 }
 
 function createRuntime(env: WorkerEnv, siteUrl: string) {
-  const store = new HouseStore(createD1Db(env.SHAMEBOT_DB));
+  const store = new HouseStore(createD1Db(env.SHAMEBOT_DB), timezoneOf(env));
   const app = createBotApp({
     store,
     botToken: env.BOT_TOKEN,
@@ -133,7 +134,7 @@ export default {
 };
 
 async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: string, botUsername: string): Promise<Response> {
-  const store = new HouseStore(createD1Db(env.SHAMEBOT_DB));
+  const store = new HouseStore(createD1Db(env.SHAMEBOT_DB), timezoneOf(env));
   const method = request.method;
   const path = url.pathname;
 
@@ -298,7 +299,7 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       },
       notifyOption(body),
     );
-    return jsonResponse({ ok: true, task: mapTaskView(task), notified }, { status: 201 });
+    return jsonResponse({ ok: true, task: mapTaskView(task, [], store.timezone), notified }, { status: 201 });
   }
 
   // Centro di comando (/admin): sposta di N giorni la scadenza delle attivita' scelte.
@@ -316,7 +317,7 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       throw new HttpError(400, "Scegli almeno un'attivita'.");
     }
     const tasks = await store.shiftTaskDeadlines(house.id, user.id, taskIds, days * 86_400_000, new Date());
-    return jsonResponse({ ok: true, shifted: tasks.length, tasks: tasks.map((task) => mapTaskView(task)) });
+    return jsonResponse({ ok: true, shifted: tasks.length, tasks: tasks.map((task) => mapTaskView(task, [], store.timezone)) });
   }
 
   if (rest === "absences" && method === "POST") {
@@ -385,7 +386,7 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
     if (!result) {
       throw new HttpError(409, "Questa voce non e' ripristinabile (gia' ripristinata o attivita' ancora presente).");
     }
-    return jsonResponse({ ok: true, task: mapTaskView(result.task), notified: result.notified }, { status: 201 });
+    return jsonResponse({ ok: true, task: mapTaskView(result.task, [], store.timezone), notified: result.notified }, { status: 201 });
   }
 
   const taskMatch = rest.match(/^tasks\/(\d+)(?:\/(complete))?$/);
@@ -396,11 +397,17 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       if (method !== "POST") {
         return methodNotAllowed(["POST"]);
       }
-      const task = await service.completeTask(house, user, taskId, true);
+      let task;
+      try {
+        task = await service.completeTask(house, user, taskId, true);
+      } catch (error) {
+        if (error instanceof TooEarlyError) throw new HttpError(409, error.message);
+        throw error;
+      }
       if (!task) {
         throw new HttpError(404, "Attivita' non trovata");
       }
-      return jsonResponse({ ok: true, task: mapTaskView(task) });
+      return jsonResponse({ ok: true, task: mapTaskView(task, [], store.timezone) });
     }
 
     if (method === "PATCH") {
@@ -411,7 +418,7 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       if (!result) {
         throw new HttpError(404, "Attivita' non trovata");
       }
-      return jsonResponse({ ok: true, task: mapTaskView(result.task), changes: result.changes, notified: result.notified });
+      return jsonResponse({ ok: true, task: mapTaskView(result.task, [], store.timezone), changes: result.changes, notified: result.notified });
     }
 
     if (method === "DELETE") {
@@ -470,7 +477,7 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
     viewerId: viewer.id,
     now: new Date().toISOString(),
     tasks: sortTasksByDueDate(tasks).map((task) => ({
-      ...mapTaskView(task, slots.filter((slot) => slot.taskId === task.id)),
+      ...mapTaskView(task, slots.filter((slot) => slot.taskId === task.id), store.timezone),
       // In pausa: tocca a chi e' fuori casa (niente avvisi; al rientro la scadenza si sposta).
       paused: task.assigneeId !== null && away.has(task.assigneeId),
     })),
@@ -505,10 +512,10 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
   };
 }
 
-function mapTaskView(task: Task, slots: TaskSlot[] = []) {
+function mapTaskView(task: Task, slots: TaskSlot[], timezone: string) {
   const dueAt = getDueAt(task);
-  // Inizio della finestra corrente: il turno personalizzato o l'ultimo completamento.
-  const startAt = task.slotDueAt && task.slotStartsAt ? new Date(task.slotStartsAt) : new Date(task.cycleAnchorAt);
+  // Inizio della finestra corrente: il turno personalizzato o il periodo (prima di startAt e' gia' fatta).
+  const startAt = task.slotDueAt && task.slotStartsAt ? new Date(task.slotStartsAt) : windowStart(dueAt, task.intervalMs, timezone);
   return {
     id: task.id,
     name: task.name,
