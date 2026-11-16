@@ -93,15 +93,6 @@ export function taskRestoredMessage(actorName: string, task: Task): string {
   return `♻️ ${actorName}: ${task.name} · ${formatFrequencyShort(task.intervalMs)}`;
 }
 
-export function taskCompletedMessage(actorName: string, task: Task, timezone = "Europe/Rome", now: Date = new Date()): string {
-  const who = task.assigneeName ? ` · tocca a ${task.assigneeName}` : "";
-  if (task.intervalMs >= dayMs) {
-    return `✅ ${actorName}: ${task.name} · prossima entro ${deadlineDay(getDueAt(task), timezone, now)}${who}`;
-  }
-  const next = Math.max(0, getDueAt(task).getTime() - now.getTime());
-  return `✅ ${actorName}: ${task.name} · prossima tra ${formatShortDuration(next || task.intervalMs)}${who}`;
-}
-
 /** "Fatto" quando la finestra successiva non e' ancora aperta. */
 export function tooEarlyMessage(task: Pick<Task, "name">, opensAt: Date, timezone = "Europe/Rome", now?: Date): string {
   return `👌 ${task.name} è già fatta per questo periodo · si riapre ${dayName(opensAt, timezone, now)}`;

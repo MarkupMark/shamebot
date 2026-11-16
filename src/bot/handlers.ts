@@ -339,7 +339,8 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     }
 
     try {
-      await service.completeTask(resolved.house, resolved.user, task.id, true);
+      await service.completeTask(resolved.house, resolved.user, task.id);
+      await ctx.react("👍").catch(() => undefined);
     } catch (error) {
       if (!(error instanceof TooEarlyError)) throw error;
       await ctx.reply(error.message);
@@ -355,7 +356,7 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
 
     let task;
     try {
-      task = await service.completeTask(resolved.house, resolved.user, Number(ctx.match[1]), true);
+      task = await service.completeTask(resolved.house, resolved.user, Number(ctx.match[1]));
     } catch (error) {
       if (!(error instanceof TooEarlyError)) throw error;
       await ctx.answerCallbackQuery({ text: error.message, show_alert: true });

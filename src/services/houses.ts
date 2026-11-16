@@ -10,7 +10,6 @@ import {
   swapRejectedMessage,
   swapRequestedMessage,
   toName,
-  taskCompletedMessage,
   tooEarlyMessage,
   taskCreatedMessage,
   taskDeletedMessage,
@@ -273,8 +272,8 @@ export class HouseService {
     return { task, notified };
   }
 
-  /** Segna come fatta. `announce` = scrive l'annuncio nel gruppo (il bot in gruppo risponde da solo, il portale no). */
-  async completeTask(house: House, actor: AppUser, taskId: number, announce: boolean, now: Date = new Date()): Promise<Task | null> {
+  /** Segna come fatta. Nessun messaggio nel gruppo: resta solo nel registro. */
+  async completeTask(house: House, actor: AppUser, taskId: number, now: Date = new Date()): Promise<Task | null> {
     const current = await this.store.getTask(house.id, taskId);
     if (!current) {
       return null;
@@ -284,10 +283,6 @@ export class HouseService {
     if (!current.slotDueAt && isTooEarly(getDueAt(current), now, current.intervalMs, tz)) {
       throw new TooEarlyError(tooEarlyMessage(current, windowStart(getDueAt(current), current.intervalMs, tz), tz, now));
     }
-    const task = await this.store.completeTask(house.id, taskId, actor.id, now);
-    if (task && announce) {
-      await safeSend(this.send, house.chatId, taskCompletedMessage(actor.displayName, task, tz, now));
-    }
-    return task;
+    return this.store.completeTask(house.id, taskId, actor.id, now);
   }
 }

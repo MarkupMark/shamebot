@@ -399,7 +399,7 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       }
       let task;
       try {
-        task = await service.completeTask(house, user, taskId, true);
+        task = await service.completeTask(house, user, taskId);
       } catch (error) {
         if (error instanceof TooEarlyError) throw new HttpError(409, error.message);
         throw error;

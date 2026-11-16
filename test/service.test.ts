@@ -59,24 +59,24 @@ describe("HouseService", () => {
     expect(messages).toEqual([]);
   });
 
-  it("annuncia il completamento solo se richiesto", async () => {
+  it("il completamento non scrive nel gruppo", async () => {
     const { service, store, luca, house, messages } = await setup();
     const task = await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium", rome("2026-11-09T10:00:00"));
-    await service.completeTask(house, luca, task.id, false, rome("2026-11-10T10:00:00"));
+    await service.completeTask(house, luca, task.id, rome("2026-11-10T10:00:00"));
+    await service.completeTask(house, luca, task.id, rome("2026-11-17T10:00:00"));
     expect(messages).toEqual([]);
-    await service.completeTask(house, luca, task.id, true, rome("2026-11-17T10:00:00"));
-    expect(messages[0]).toBe("✅ Luca: Bagno · prossima entro dom 29");
+    expect((await store.getTask(house.id, task.id))?.completedCount).toBe(2);
   });
 
   it("gia' fatta per questo periodo: non chiude in anticipo la finestra dopo", async () => {
     const { service, store, luca, house, messages } = await setup();
     const task = await store.createTask(house.id, luca.id, "Bagno", 7 * day, "medium", rome("2026-11-09T10:00:00"));
-    await service.completeTask(house, luca, task.id, true, rome("2026-11-10T10:00:00"));
-    await expect(service.completeTask(house, luca, task.id, true, rome("2026-11-12T10:00:00"))).rejects.toBeInstanceOf(TooEarlyError);
-    await expect(service.completeTask(house, luca, task.id, true, rome("2026-11-12T10:00:00"))).rejects.toThrow(
+    await service.completeTask(house, luca, task.id, rome("2026-11-10T10:00:00"));
+    await expect(service.completeTask(house, luca, task.id, rome("2026-11-12T10:00:00"))).rejects.toBeInstanceOf(TooEarlyError);
+    await expect(service.completeTask(house, luca, task.id, rome("2026-11-12T10:00:00"))).rejects.toThrow(
       "👌 Bagno è già fatta per questo periodo · si riapre lun 16",
     );
-    expect(messages).toEqual(["✅ Luca: Bagno · prossima entro dom 22"]);
+    expect(messages).toEqual([]);
     expect((await store.getTask(house.id, task.id))?.completedCount).toBe(1);
   });
 });

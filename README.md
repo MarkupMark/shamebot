@@ -70,7 +70,7 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
 | --- | --- |
 | `/start` | Attiva la casa per questo gruppo |
 | `/attivita` | Le 5 attivita' piu' urgenti ("Mostra altre" per tutte) |
-| `/fatto [n]` | Segna come fatta (senza numero mostra i pulsanti) |
+| `/fatto [n]` | Segna come fatta (senza numero mostra i pulsanti). Nessun messaggio nel gruppo: resta nel `/log` |
 | `/nuova nome \| frequenza \| gravita'` | Es. `/nuova Pulire il bagno \| 2 volte a settimana \| importante` |
 | `/modifica n \| nome \| frequenza \| gravita'` | `-` lascia invariato un campo |
 | `/elimina n` | Elimina un'attivita' |
