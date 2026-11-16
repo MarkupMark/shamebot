@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { plainText } from "../src/utils/mention.js";
 import { HouseService, SwapError } from "../src/services/houses.js";
 import { createTestStore, day } from "./helpers.js";
 
@@ -14,10 +15,10 @@ async function setup() {
   const service = new HouseService(
     store,
     async (_chatId, text, buttons) => {
-      sent.push({ text, buttons });
+      sent.push({ text: plainText(text), buttons });
       return { message_id: 7 };
     },
-    async (_chatId, _messageId, text) => void edits.push(text),
+    async (_chatId, _messageId, text) => void edits.push(plainText(text)),
   );
   const task = await store.createTask(house.id, luca.id, "Bagno", 7 * day, "high", new Date(), null, {
     mode: "alternate",
@@ -56,7 +57,7 @@ describe("Scambio di turno", () => {
     const { store, house, luca, anna, service, edits, task } = await setup();
     const swap = await service.requestSwap(house, luca, task.id, anna.id);
     expect(await service.answerSwap(house, anna, swap.id, false)).toBeNull();
-    expect(edits[0]).toBe('🔄 Anna non accetta lo scambio di turno di "Bagno"');
+    expect(edits[0]).toBe('🔄 Luca, Anna non accetta lo scambio di turno di "Bagno"');
     expect((await store.getTask(house.id, task.id))?.assigneeName).toBe("Luca");
     await expect(service.answerSwap(house, anna, swap.id, true)).rejects.toBeInstanceOf(SwapError);
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { plainText } from "../src/utils/mention.js";
 import { buildDigest, localMidnight, localParts, runDigests } from "../src/services/digest.js";
 import { anchorAtCreation, createTestStore, day, hour } from "./helpers.js";
 
@@ -14,7 +15,7 @@ async function setup() {
 
 function collector() {
   const sent: string[] = [];
-  return { sent, send: async (_chatId: number, text: string) => void sent.push(text) };
+  return { sent, send: async (_chatId: number, text: string) => void sent.push(plainText(text)) };
 }
 
 describe("Fuso orario", () => {
@@ -44,7 +45,7 @@ describe("Testo dei promemoria", () => {
     await anchorAtCreation(db);
     const message = buildDigest("morning", { intro: "Sveglia!" }, await store.listTasks(house.id), now, tz);
     expect(message.empty).toBe(false);
-    expect(message.text).toBe(
+    expect(plainText(message.text)).toBe(
       [
         "Sveglia!",
         "",
@@ -73,7 +74,7 @@ describe("Testo dei promemoria", () => {
     await anchorAtCreation(db);
     const message = buildDigest("morning", { intro: null }, await store.listTasks(house.id), now, tz);
     expect(message.empty).toBe(false);
-    expect(message.text).toBe(["☀️ Buongiorno! Ecco cosa c'è da fare oggi", "", "Domani", "• Bagno · entro le 16:00"].join("\n"));
+    expect(plainText(message.text)).toBe(["☀️ Buongiorno! Ecco cosa c'è da fare oggi", "", "Domani", "• Bagno · entro le 16:00"].join("\n"));
   });
 
   it("buongiorno senza nulla di oggi o domani: e' 'vuoto' ma suggerisce comunque le prossime", async () => {
@@ -84,7 +85,7 @@ describe("Testo dei promemoria", () => {
     await anchorAtCreation(db);
     const message = buildDigest("morning", { intro: null }, await store.listTasks(house.id), now, tz);
     expect(message.empty).toBe(true);
-    expect(message.text).toBe(
+    expect(plainText(message.text)).toBe(
       ["☀️ Buongiorno! Ecco cosa c'è da fare oggi", "", "Oggi e domani niente in scadenza 🎉", "", "Se vuoi fare altro oggi:", "• Bagno · entro mer 11"].join("\n"),
     );
   });
@@ -117,7 +118,7 @@ describe("Buongiorno con i periodi fissi", () => {
 
     const sunday = new Date("2026-11-15T08:00:00.000Z"); // dom 15, 09:00 a Roma
     const message = buildDigest("morning", { intro: null }, await store.listTasks(house.id), sunday, tz);
-    expect(message.text).toBe(["☀️ Buongiorno! Ecco cosa c'è da fare oggi", "", "Oggi", "• Bagno · entro fine giornata"].join("\n"));
+    expect(plainText(message.text)).toBe(["☀️ Buongiorno! Ecco cosa c'è da fare oggi", "", "Oggi", "• Bagno · entro fine giornata"].join("\n"));
   });
 });
 

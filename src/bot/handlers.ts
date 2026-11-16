@@ -3,6 +3,7 @@ import type { Context } from "grammy";
 import type { AppUser, House, LogEntry, WebLoginRequest } from "../types/domain.js";
 import type { HouseStore } from "../services/store.js";
 import { AbsenceError, HouseService, SwapError, TooEarlyError, type EditInChat } from "../services/houses.js";
+import { renderMentions } from "../utils/mention.js";
 import { compactTaskCount, formatTaskList, safeSend, type SendToChat } from "../services/notify.js";
 import { formatFrequencyShort, parseDurationInput } from "../utils/duration.js";
 import { severityFromItalian, severityToItalian } from "../utils/labels.js";
@@ -85,11 +86,22 @@ function quickActions(): InlineKeyboard {
 
 export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages = true }: BotAppDependencies): BotApp {
   const bot = new Bot(botToken);
+  // I tag (utils/mention.ts) diventano entita' text_mention: notificano la persona anche senza @username.
   const send: SendToChat = sendMessages
-    ? (chatId, text, buttons) =>
-        bot.api.sendMessage(chatId, text, buttons ? { reply_markup: InlineKeyboard.from(buttons.map((row) => row.map((b) => InlineKeyboard.text(b.text, b.data)))) } : undefined)
+    ? (chatId, raw, buttons) => {
+        const { text, entities } = renderMentions(raw);
+        return bot.api.sendMessage(chatId, text, {
+          ...(entities.length ? { entities } : {}),
+          ...(buttons ? { reply_markup: InlineKeyboard.from(buttons.map((row) => row.map((b) => InlineKeyboard.text(b.text, b.data)))) } : {}),
+        });
+      }
     : async () => undefined;
-  const edit: EditInChat = sendMessages ? (chatId, messageId, text) => bot.api.editMessageText(chatId, messageId, text) : async () => undefined;
+  const edit: EditInChat = sendMessages
+    ? (chatId, messageId, raw) => {
+        const { text, entities } = renderMentions(raw);
+        return bot.api.editMessageText(chatId, messageId, text, entities.length ? { entities } : undefined);
+      }
+    : async () => undefined;
   const service = new HouseService(store, send, edit);
 
   type Resolved = { house: House; user: AppUser };

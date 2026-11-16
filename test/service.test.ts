@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { plainText } from "../src/utils/mention.js";
 import { HouseService, TooEarlyError } from "../src/services/houses.js";
 import { formatLogEntry, groupCommands, parseFields, privateCommands } from "../src/bot/handlers.js";
 import { createTestStore, day } from "./helpers.js";
@@ -11,7 +12,7 @@ async function setup() {
   const luca = await store.upsertUser({ telegramId: 1, username: null, displayName: "Luca" });
   const { house } = await store.getOrCreateHouse(-100, "Casa", luca.id);
   const messages: string[] = [];
-  const service = new HouseService(store, async (_chatId, text) => void messages.push(text));
+  const service = new HouseService(store, async (_chatId, text) => void messages.push(plainText(text)));
   return { store, luca, house, messages, service };
 }
 

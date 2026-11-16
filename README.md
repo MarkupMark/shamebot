@@ -28,6 +28,8 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   l'avviso di scadenza la mattina dopo alle 9 (di notte il bot non scrive). Per quelle di poche ore: 3 ore e 30 minuti
   prima e poi a scadenza. Per `medio` e `importante` c'e' un secondo sollecito dopo 2 giorni / 1 giorno di ritardo.
   I messaggi citano chi ha fatto l'attivita' l'ultima volta.
+- **Tag.** Quando un messaggio riguarda una persona (a chi tocca, promemoria, insulti, riepiloghi, scambi di turno)
+  il bot la tagga, cosi' le arriva la notifica anche senza @username.
 - **Assegnazione.** Ogni attivita' puo' toccare a: *chiunque* (predefinito), *solo un utente*, *a turno*
   (passa al prossimo della lista a ogni "Fatto") oppure *personalizzato*: una lista di turni, ognuno con una persona
   e un periodo (un giorno specifico, entro una settimana, entro un mese). Il turno aperto con la scadenza piu' vicina

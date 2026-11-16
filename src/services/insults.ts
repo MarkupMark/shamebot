@@ -1,4 +1,5 @@
 import type { Task, TaskSeverity } from "../types/domain.js";
+import { mention } from "../utils/mention.js";
 
 /**
  * Messaggi predefiniti, usati quando nessun altro coinquilino ha scritto insulti per quella gravita'.
@@ -30,9 +31,10 @@ export type Chooser = <T>(items: T[]) => T | undefined;
 export const randomPick: Chooser = (items) => items[Math.floor(Math.random() * items.length)];
 
 /** Riempie i segnaposto: senza assegnatario l'insulto va a tutta la casa ("ragazzi"). */
-export function fillInsult(template: string, task: Pick<Task, "name" | "assigneeName">): string {
+export function fillInsult(template: string, task: Pick<Task, "name" | "assigneeName" | "assigneeTelegramId">): string {
+  const name = task.assigneeName ? mention(task.assigneeName, task.assigneeTelegramId) : "ragazzi";
   return template
-    .replace(/\{nome\}/gi, task.assigneeName ?? "ragazzi")
+    .replace(/\{nome\}/gi, () => name)
     .replace(/\{attivit[aà]\}/gi, task.name)
     // Lo spazio che il portale mette dopo un segnaposto non deve restare davanti alla punteggiatura ("Luca ," -> "Luca,").
     .replace(/ +([,.!?;:])/g, "$1");

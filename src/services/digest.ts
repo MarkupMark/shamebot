@@ -2,7 +2,7 @@ import type { DigestKind, DigestSettings, House, Task } from "../types/domain.js
 import type { HouseStore } from "./store.js";
 import { getDueAt } from "./policy.js";
 import { isTooEarly } from "./periods.js";
-import { deadlineDay, safeSend, type SendToChat } from "./notify.js";
+import { assigneeTag, deadlineDay, safeSend, type SendToChat } from "./notify.js";
 import { formatShortDuration } from "../utils/duration.js";
 import { sortTasksByDueDate } from "../utils/tasks.js";
 
@@ -40,7 +40,8 @@ function until(at: Date, timezone: string): string {
 // ---- Testo ----
 
 function who(task: Task): string {
-  return task.assigneeName ? ` · 👤 ${task.assigneeName}` : "";
+  const assignee = assigneeTag(task);
+  return assignee ? ` · 👤 ${assignee}` : "";
 }
 
 export type DigestMessage = {

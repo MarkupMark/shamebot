@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { plainText } from "../src/utils/mention.js";
 import { getDueAt } from "../src/services/policy.js";
 import { runDueChecks } from "../src/services/scheduler.js";
 import { AbsenceError, HouseService } from "../src/services/houses.js";
@@ -19,10 +20,10 @@ async function setup() {
   const service = new HouseService(
     store,
     async (_chatId, text, buttons) => {
-      sent.push({ text, buttons });
+      sent.push({ text: plainText(text), buttons });
       return { message_id: 42 };
     },
-    async (_chatId, _messageId, text) => void edits.push(text),
+    async (_chatId, _messageId, text) => void edits.push(plainText(text)),
   );
   return { store, db, house, luca, anna, service, sent, edits };
 }
@@ -62,7 +63,7 @@ describe("Fuori casa", () => {
     await store.approveAbsence(house.id, absence.id, anna.id, start);
 
     const sent: string[] = [];
-    await runDueChecks(store, async (_c, text) => void sent.push(text), new Date("2026-11-03T10:00:00.000Z"), first);
+    await runDueChecks(store, async (_c, text) => void sent.push(plainText(text)), new Date("2026-11-03T10:00:00.000Z"), first);
     expect(sent.length).toBe(1);
     expect(sent[0]).toContain("Umido");
   });

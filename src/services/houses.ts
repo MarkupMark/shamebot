@@ -11,6 +11,7 @@ import {
   swapRequestedMessage,
   toName,
   tooEarlyMessage,
+  assigneeTag,
   taskCreatedMessage,
   taskDeletedMessage,
   taskRestoredMessage,
@@ -19,6 +20,7 @@ import {
 } from "./notify.js";
 import { isTooEarly, windowStart } from "./periods.js";
 import { getDueAt } from "./policy.js";
+import { mention } from "../utils/mention.js";
 
 /** Modifica il testo di un messaggio gia' inviato (e ne toglie i pulsanti). */
 export type EditInChat = (chatId: number, messageId: number, text: string) => Promise<unknown>;
@@ -128,7 +130,7 @@ export class HouseService {
     const swap = await this.store.createSwap(house.id, taskId, actor.id, targetId);
     const nowTurn = task.assigneeId === actor.id ? swap.targetName : task.assigneeId === targetId ? actor.displayName : null;
     const effect = nowTurn ? `Se accetta, questo turno tocca ${toName(nowTurn)}.` : null;
-    const messageId = await sendAndGetId(this.send, house.chatId, swapRequestedMessage(actor.displayName, swap.targetName, task.name, effect), [
+    const messageId = await sendAndGetId(this.send, house.chatId, swapRequestedMessage(actor.displayName, mention(swap.targetName, swap.targetTelegramId), task.name, effect), [
       [
         { text: "✅ Accetto", data: `swap:${swap.id}:yes` },
         { text: "❌ Rifiuto", data: `swap:${swap.id}:no` },
@@ -159,9 +161,9 @@ export class HouseService {
         await this.editOrSend(house.chatId, swap.messageId, `🔄 Scambio di "${swap.taskName}" annullato: la rotazione è cambiata`);
         throw new SwapError("La rotazione e' cambiata nel frattempo: richiesta annullata.");
       }
-      text = swapAcceptedMessage(actor.displayName, task.name, task.assigneeName);
+      text = swapAcceptedMessage(actor.displayName, task.name, assigneeTag(task));
     } else {
-      text = swapRejectedMessage(actor.displayName, swap.taskName);
+      text = swapRejectedMessage(actor.displayName, swap.taskName, mention(swap.requesterName, swap.requesterTelegramId));
     }
     if (!(await this.store.resolveSwap(house.id, swapId, accept ? "accepted" : "rejected"))) {
       throw new SwapError("Richiesta gia' chiusa.");

@@ -8,6 +8,7 @@ import { createBotApp, registerBotCommands } from "./bot/handlers.js";
 import { createD1Db } from "./services/db.js";
 import { HouseStore, sessionTtlSeconds } from "./services/store.js";
 import { runDueChecks } from "./services/scheduler.js";
+import { plainText } from "./utils/mention.js";
 import { composeDigest, defaultDigestIntro, runDigests } from "./services/digest.js";
 import { defaultInsults, maxInsultLength, maxInsultsPerSeverity } from "./services/insults.js";
 import { getDueAt } from "./services/policy.js";
@@ -466,7 +467,7 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
         intro: settings.intro,
         defaultIntro: defaultDigestIntro[kind],
         skipIfEmpty: settings.skipIfEmpty,
-        preview: preview.text,
+        preview: plainText(preview.text),
         previewEmpty: preview.empty,
       };
     }),

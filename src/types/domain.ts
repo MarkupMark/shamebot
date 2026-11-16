@@ -87,6 +87,8 @@ export type Task = {
   /** A chi tocca adesso (null = chiunque). */
   assigneeId: number | null;
   assigneeName: string | null;
+  /** Id Telegram di chi tocca, per taggarlo nei messaggi. */
+  assigneeTelegramId?: number | null;
   /** Turno personalizzato aperto con la scadenza piu' vicina: se presente decide la scadenza. */
   slotStartsAt?: string | null;
   slotDueAt?: string | null;
@@ -152,8 +154,10 @@ export type TurnSwap = {
   taskName: string;
   requesterId: number;
   requesterName: string;
+  requesterTelegramId: number;
   targetId: number;
   targetName: string;
+  targetTelegramId: number;
   status: TurnSwapStatus;
   createdAt: string;
   messageId: number | null;

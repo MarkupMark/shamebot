@@ -3,6 +3,7 @@ import { formatFrequencyShort, formatShortDuration } from "../utils/duration.js"
 import { severityToItalian } from "../utils/labels.js";
 import { getDueAt } from "./policy.js";
 import { localParts } from "../utils/timezone.js";
+import { mention, plainText } from "../utils/mention.js";
 
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -76,8 +77,13 @@ export function formatTaskList(tasks: Task[], now: Date, limit?: number, away: S
   return shown.map((task) => formatTaskBullet(task, now, away, timezone)).join("\n");
 }
 
+/** Chi tocca, taggato (null = chiunque). */
+export function assigneeTag(task: Pick<Task, "assigneeName" | "assigneeTelegramId">): string | null {
+  return task.assigneeName ? mention(task.assigneeName, task.assigneeTelegramId) : null;
+}
+
 export function taskCreatedMessage(actorName: string, task: Task): string {
-  const who = task.assigneeName ? ` · 👤 ${task.assigneeName}` : "";
+  const who = task.assigneeName ? ` · 👤 ${assigneeTag(task)}` : "";
   return `➕ ${actorName}: ${task.name} · ${formatFrequencyShort(task.intervalMs)} · ${severityToItalian(task.severity)}${who}`;
 }
 
@@ -108,7 +114,7 @@ export function awayApprovedMessage(name: string, approver: string): string {
 
 /** "a Luca" ma "ad Anna". */
 export function toName(name: string): string {
-  return `${/^[aA]/.test(name) ? "ad" : "a"} ${name}`;
+  return `${/^[aA]/.test(plainText(name)) ? "ad" : "a"} ${name}`;
 }
 
 export function swapRequestedMessage(requester: string, target: string, taskName: string, effect: string | null): string {
@@ -119,8 +125,8 @@ export function swapAcceptedMessage(target: string, taskName: string, assignee: 
   return `🔄 Turno scambiato · ok di ${target}\n"${taskName}": ora tocca ${toName(assignee ?? "?")}`;
 }
 
-export function swapRejectedMessage(target: string, taskName: string): string {
-  return `🔄 ${target} non accetta lo scambio di turno di "${taskName}"`;
+export function swapRejectedMessage(target: string, taskName: string, requester?: string): string {
+  return `🔄 ${requester ? `${requester}, ` : ""}${target} non accetta lo scambio di turno di "${taskName}"`;
 }
 
 export function awayEndedMessage(name: string, endedBy: string | null, moved: MovedTask[], now: Date): string {
@@ -138,7 +144,8 @@ export function awayEndedMessage(name: string, endedBy: string | null, moved: Mo
 export function noticeMessage(task: Task, stage: NoticeStageKey, now: Date): string {
   const overdueMs = now.getTime() - getDueAt(task).getTime();
   const last = task.lastCompletedByName ? ` · ultima: ${task.lastCompletedByName}` : "";
-  const who = task.assigneeName ? ` · tocca a ${task.assigneeName}` : "";
+  const assignee = assigneeTag(task);
+  const who = assignee ? ` · tocca a ${assignee}` : "";
 
   switch (stage) {
     case "three_hours":
@@ -146,12 +153,12 @@ export function noticeMessage(task: Task, stage: NoticeStageKey, now: Date): str
     case "thirty_minutes":
       return `⏰ ${task.name} · tra 30m${who}`;
     case "overdue":
-      return task.assigneeName
-        ? `😬 ${task.name} · scaduta · doveva farla ${task.assigneeName}`
+      return assignee
+        ? `😬 ${task.name} · scaduta · doveva farla ${assignee}`
         : `😬 ${task.name} · scaduta${last}`;
     case "nudge":
-      return task.assigneeName
-        ? `🚨 ${task.name} · ${task.assigneeName} è in ritardo di ${formatShortDuration(overdueMs)}`
+      return assignee
+        ? `🚨 ${task.name} · ${assignee} è in ritardo di ${formatShortDuration(overdueMs)}`
         : `🚨 ${task.name} · ritardo ${formatShortDuration(overdueMs)}${last}`;
   }
 }

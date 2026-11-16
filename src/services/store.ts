@@ -84,7 +84,7 @@ const sessionTtlMs = 30 * 24 * 60 * 60 * 1000;
 const taskColumns = `
   t.*, u.display_name AS last_completed_by_name,
   s.starts_at AS slot_starts_at, s.due_at AS slot_due_at,
-  au.id AS assignee_id, au.display_name AS assignee_name
+  au.id AS assignee_id, au.display_name AS assignee_name, au.telegram_id AS assignee_telegram_id
 `;
 
 const taskJoins = `
@@ -1046,7 +1046,8 @@ export function awayKey(houseId: number, userId: number): string {
 }
 
 const swapSelect = `
-  SELECT w.*, t.name AS task_name, r.display_name AS requester_name, g.display_name AS target_name
+  SELECT w.*, t.name AS task_name, r.display_name AS requester_name, r.telegram_id AS requester_telegram_id,
+    g.display_name AS target_name, g.telegram_id AS target_telegram_id
   FROM turn_swaps w
   JOIN tasks t ON t.id = w.task_id
   JOIN users r ON r.id = w.requester_id
@@ -1061,8 +1062,10 @@ function mapSwap(row: SqlRow): TurnSwap {
     taskName: String(row.task_name),
     requesterId: Number(row.requester_id),
     requesterName: String(row.requester_name),
+    requesterTelegramId: Number(row.requester_telegram_id),
     targetId: Number(row.target_id),
     targetName: String(row.target_name),
+    targetTelegramId: Number(row.target_telegram_id),
     status: String(row.status) as TurnSwapStatus,
     createdAt: String(row.created_at),
     messageId: row.message_id === null || row.message_id === undefined ? null : Number(row.message_id),
@@ -1135,6 +1138,7 @@ function mapTask(row: SqlRow): Task {
     assignTurn: Number(row.assign_turn ?? 0),
     assigneeId: row.assignee_id === null || row.assignee_id === undefined ? null : Number(row.assignee_id),
     assigneeName: nullableString(row.assignee_name),
+    assigneeTelegramId: row.assignee_telegram_id === null || row.assignee_telegram_id === undefined ? null : Number(row.assignee_telegram_id),
     slotStartsAt: nullableString(row.slot_starts_at),
     slotDueAt: nullableString(row.slot_due_at),
     createdAt: String(row.created_at),

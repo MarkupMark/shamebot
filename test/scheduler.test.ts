@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { plainText } from "../src/utils/mention.js";
 import { runDueChecks } from "../src/services/scheduler.js";
 
 /** Scelta deterministica: sempre il primo insulto. */
@@ -16,7 +17,7 @@ describe("runDueChecks", () => {
 
     const sent: Array<{ chatId: number; text: string }> = [];
     const send = async (chatId: number, text: string) => {
-      sent.push({ chatId, text });
+      sent.push({ chatId, text: plainText(text) });
     };
 
     // Settimanale creata domenica mattina: scade alla fine della settimana dopo (domenica 8, mezzanotte).
@@ -53,7 +54,7 @@ describe("runDueChecks", () => {
     expect(await runDueChecks(store, failing, now)).toBe(0);
 
     const sent: string[] = [];
-    expect(await runDueChecks(store, async (_chatId, text) => void sent.push(text), now)).toBe(1);
+    expect(await runDueChecks(store, async (_chatId, text) => void sent.push(plainText(text)), now)).toBe(1);
     expect(sent.length).toBe(1);
   });
 
@@ -73,7 +74,7 @@ describe("runDueChecks", () => {
     expect((await store.insultPool(house.id, "low", null)).length).toBe(2);
 
     const sent: string[] = [];
-    expect(await runDueChecks(store, async (_c, text) => void sent.push(text), new Date("2026-11-02T11:00:00.000Z"), first)).toBe(1);
+    expect(await runDueChecks(store, async (_c, text) => void sent.push(plainText(text)), new Date("2026-11-02T11:00:00.000Z"), first)).toBe(1);
     expect(sent[0]).toBe("😬 Umido · scaduta · doveva farla Luca\nLuca, Umido! Puzza tutto.");
   });
 
@@ -86,7 +87,7 @@ describe("runDueChecks", () => {
     await store.setMyInsults(house.id, luca.id, "medium", ["Solo miei, non valgono contro di me"]);
 
     const sent: string[] = [];
-    await runDueChecks(store, async (_c, text) => void sent.push(text), new Date("2026-11-02T11:00:00.000Z"), first);
+    await runDueChecks(store, async (_c, text) => void sent.push(plainText(text)), new Date("2026-11-02T11:00:00.000Z"), first);
     expect(sent[0]).toBe("😬 Umido · scaduta · doveva farla Luca\nLuca, Umido è scaduta. La casa ti guarda 👀");
   });
 });
