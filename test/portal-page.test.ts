@@ -30,6 +30,17 @@ describe("portale", () => {
     expect(html).toContain('"Vedi tutte ("');
   });
 
+  it("una sola lista: Prossime scadenze ha Fatto, Modifica ed Elimina e la vecchia lista non c'e' piu'", () => {
+    expect(html).toContain("function taskDetails");
+    expect(html).toContain('"primary dl-done"');
+    expect(html).toContain('"✏️ Modifica"');
+    expect(html).toContain('"🗑 Elimina"');
+    expect(html).not.toContain("function taskCard");
+    expect(html).not.toContain("function taskGroups");
+    // la lista sta dentro la scheda Attivita', non piu' sopra tutte le schede
+    expect(html).toContain("var parts = [header, viewAbsences(), viewSwaps(), tabs,");
+  });
+
   it("la frequenza 'Ogni mese' si salva come mese", () => {
     expect(html).toContain('value: "1 mese"');
     expect(html).not.toContain('value: "30 giorni"');

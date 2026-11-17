@@ -39,8 +39,11 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   o con "Inverti ordine". Dal pulsante 🔄 sulla card un coinquilino chiede a un altro della rotazione di scambiarsi il
   turno; nel gruppo compaiono "✅ Accetto" / "❌ Rifiuto" (risponde solo chi l'ha ricevuta, anche dal portale).
   Se accetta, i due si invertono nella rotazione. Chi ha chiesto puo' annullare finche' non c'e' risposta.
-- **Ordine delle attivita'.** Un solo interruttore, in Prossime scadenze, vale per tutto il portale: *Tutte* (per scadenza)
-  o *Prima le mie* (tue, poi di chiunque, poi degli altri, sia in Prossime scadenze sia nella lista). La scelta resta salvata nel browser.
+- **Lista delle attivita' nel portale.** Una sola lista, raggruppata per scadenza (in ritardo, oggi, entro domenica, ...).
+  *Fatto* e' sempre a portata di mano per le tue e per quelle di chiunque; toccando un'attivita' si apre il dettaglio con
+  gravita', turni, *Fatto*, *Scambia turno*, *Modifica* ed *Elimina*. "Entro domenica" mostra le prime 3 (*Vedi tutte* per il resto).
+- **Ordine delle attivita'.** Un interruttore in cima alla lista: *Tutte* (per scadenza) o *Prima le mie*
+  (tue, poi di chiunque, poi degli altri, dentro ogni gruppo). La scelta resta salvata nel browser.
 - **Fuori casa.** Dal portale (scheda Membri) o con `/fuori` un coinquilino dice "🧳 Sono fuori casa"; nel gruppo compare la richiesta con il pulsante
   "✅ Confermo" e serve l'ok di un **altro** coinquilino (dal gruppo o dal portale). Da quel momento le attivita' che
   toccano a lui sono in pausa: niente promemoria, avvisi o insulti. Al rientro (lo segna lui o chiunque, dal portale o con `/rientro [nome]`) le

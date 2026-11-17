@@ -56,15 +56,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   .badge.out { border-color: var(--warn); color: var(--warn); }
   nav button.active { background: var(--accent); color: var(--accent-text); border-color: transparent; }
   .task-name { font-weight: 600; }
-  .group-title { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 2px 2px; }
-  .card.task { padding: 10px 12px; margin: 8px 0; }
   .row.tight { gap: 6px; flex-wrap: nowrap; }
-  .task-meta { margin-top: 1px; font-size: .85rem; }
-  .task-foot { margin-top: 8px; }
-  .task-foot .grow { font-size: .9rem; }
-  .task-foot button { padding: 5px 12px; }
-  .task-foot button.icon { padding: 5px 8px; }
-  .due-ok { color: var(--ok); } .due-soon { color: var(--warn); } .due-late { color: var(--late); font-weight: 600; }
   .tag { font-size: .75rem; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
   .tag.high { color: var(--late); border-color: var(--late); }
   label.check { display: flex; gap: 8px; align-items: center; font-size: .92rem; }
@@ -112,7 +104,16 @@ const PAGE_TEMPLATE = `<!doctype html>
   .dl-row { padding: 8px 0; border-bottom: 1px solid var(--line); }
   .dl-row:last-child { border-bottom: 0; }
   .dl-row.done .dl-name { color: var(--muted); font-weight: 500; }
-  .dl-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .dl-line { display: flex; align-items: center; gap: 8px; }
+  .dl-main { flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .dl-done { flex-shrink: 0; padding: 5px 11px; font-size: .82rem; }
+  .dl-detail { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+  .dl-meta { font-size: .8rem; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .dl-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .dl-actions button { padding: 6px 12px; font-size: .85rem; }
+  .dl-row.open .dl-name { color: var(--accent); }
+  .dl-edit .card { margin: 8px 0; }
+  .dl-add { width: 100%; margin-bottom: 4px; }
   .dl-name { min-width: 0; font-size: .92rem; font-weight: 600; line-height: 1.2; }
   .dl-name small { display: block; font-size: .74rem; font-weight: 400; color: var(--muted); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dl-who { flex-shrink: 0; font-size: .76rem; padding: 3px 10px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
@@ -135,7 +136,6 @@ const PAGE_TEMPLATE = `<!doctype html>
   .away .grow small { display: block; color: var(--muted); font-size: .78rem; }
   .away.pending { border-color: var(--warn); }
   .away button { padding: 6px 12px; font-size: .85rem; white-space: nowrap; }
-  .due-paused { color: var(--muted); font-weight: 600; }
 
   /* ---- Assegnazione ---- */
   .assign { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; }
@@ -171,7 +171,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   var savedOrder = null, savedDlMine = null;
   try { savedOrder = localStorage.getItem("taskOrder"); savedDlMine = localStorage.getItem("dlMine"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    mineFirst: savedOrder === "mine" || savedOrder === "mineany" || savedDlMine === "1", tlExpanded: false, weekExpanded: false, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
+    mineFirst: savedOrder === "mine" || savedOrder === "mineany" || savedDlMine === "1", tlExpanded: false, weekExpanded: false, openTask: null, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -305,20 +305,6 @@ const PAGE_TEMPLATE = `<!doctype html>
     if (ms % DAY === 0) return { n: ms / DAY, unit: "giorni" };
     return { n: Math.max(1, Math.round(ms / HOUR)), unit: "ore" };
   }
-  function duration(ms) {
-    var m = Math.max(1, Math.round(Math.abs(ms) / 60000));
-    var d = Math.floor(m / 1440), hh = Math.floor((m % 1440) / 60), mm = m % 60;
-    if (d > 0) return d + "g " + hh + "h";
-    if (hh > 0) return hh + "h " + mm + "m";
-    return mm + "m";
-  }
-  function dueInfo(task) {
-    var left = new Date(task.dueAt).getTime() - Date.now();
-    if (left < 0) return { cls: "due-late", text: "In ritardo di " + duration(left) };
-    if (isClosed(task, Date.now())) return { cls: "due-ok", text: "✓ Fatta · si riapre " + relDay(new Date(task.startAt).getTime()), closed: true };
-    var text = task.intervalMs < DAY ? "Entro " + duration(left) : "Entro " + relDay(new Date(task.dueAt).getTime() - 1);
-    return { cls: left < DAY ? "due-soon" : "due-ok", text: text };
-  }
   var SEVERITY = { low: "poco importante", medium: "medio", high: "importante" };
   function when(iso) {
     return new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -392,19 +378,34 @@ const PAGE_TEMPLATE = `<!doctype html>
     return out;
   }
 
+  /** Riga della lista: tocco sul nome = dettaglio con le azioni; "Fatto" sempre in vista per le tue e quelle di chiunque. */
   function dueRow(task, now, kind) {
+    if (state.editing === task.id) return h("div", { class: "dl-edit" }, taskForm(task));
     var due = new Date(task.dueAt).getTime();
     var start = new Date(task.startAt).getTime();
     var mine = task.assigneeId === state.data.viewerId;
+    var anyone = task.assigneeId === null || task.assigneeId === undefined;
+    var open = state.openTask === task.id;
+    var canDone = kind !== "done";
+    var quick = canDone && (mine || anyone);
     var chipCls = "dl-who" + (mine ? " me" : "") + (kind === "late" ? " late" : kind === "soft" || kind === "done" ? " soft" : "");
     var sub = kind === "late" ? "in ritardo di " + shortLeft(due - now)
       : kind === "paused" ? "in pausa · fuori casa"
       : kind === "done" ? "fatta" + (task.lastCompletedByName ? " da " + task.lastCompletedByName : "") + " · si riapre " + relDay(start)
       : task.frequency + " · " + deadlineText(task);
-    var row = h("div", { class: "dl-row" + (kind === "done" ? " done" : ""), title: task.name + " - scade " + when(task.dueAt) },
+    function toggle() { state.openTask = open ? null : task.id; state.swapPicking = null; render(); }
+    function done() {
+      api("POST", "/api/houses/" + state.houseId + "/tasks/" + task.id + "/complete")
+        .then(function () { state.openTask = null; return loadHouse(); }).catch(fail);
+    }
+    var row = h("div", { class: "dl-row" + (kind === "done" ? " done" : "") + (open ? " open" : "") },
       h("div", { class: "dl-line" },
-        h("div", { class: "dl-name" }, (kind === "done" ? "✓ " : "") + task.name, h("small", {}, sub)),
-        h("span", { class: chipCls }, whoLabel(task))
+        h("div", { class: "dl-main", role: "button", tabindex: "0", "aria-expanded": open ? "true" : "false", title: task.name + " - scade " + when(task.dueAt),
+          onclick: toggle, onkeydown: function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } } },
+          h("div", { class: "dl-name" }, (kind === "done" ? "✓ " : "") + task.name, h("small", {}, sub)),
+          h("span", { class: chipCls }, whoLabel(task))
+        ),
+        quick ? h("button", { class: "primary dl-done", onclick: done }, "Fatto") : null
       )
     );
     if (kind !== "late" && kind !== "paused" && kind !== "done") {
@@ -413,7 +414,38 @@ const PAGE_TEMPLATE = `<!doctype html>
       var cls = left < DAY ? "urgent" : left < 3 * DAY || frac > 0.7 ? "soon" : "ok";
       row.appendChild(h("div", { class: "dl-track" }, h("i", { class: cls, style: "width:" + Math.max(3, frac * 100) + "%" })));
     }
+    if (open) row.appendChild(taskDetails(task, canDone && !quick, done));
     return row;
+  }
+
+  /** Dettaglio aperto di un'attivita': gravita', turni, scadenza e le azioni meno frequenti. */
+  function taskDetails(task, showDone, done) {
+    function remove() {
+      if (!confirm("Eliminare «" + task.name + "»?")) return;
+      var notify = state.data.house.notifyChanges ? "1" : "0";
+      api("DELETE", "/api/houses/" + state.houseId + "/tasks/" + task.id + "?notify=" + notify)
+        .then(function () { state.openTask = null; return loadHouse(); }).catch(fail);
+    }
+    var extra = [task.frequency];
+    if (task.assignMode === "alternate") {
+      var turns = currentFirst(task);
+      extra.push(turns.length > 1 ? "a turno, poi " + (turns[1] === state.data.viewerId ? "tu" : memberName(turns[1])) : "a turno");
+    }
+    if (task.assignMode === "custom" && task.slots.length > 1) extra.push("poi " + task.slots[1].userName);
+    extra.push("scade " + when(task.dueAt));
+    var pendingSwap = (state.data.swaps || []).filter(function (w) { return w.taskId === task.id; })[0];
+    var canSwap = task.assignMode === "alternate" && !pendingSwap && task.assignUserIds.indexOf(state.data.viewerId) >= 0 && task.assignUserIds.length > 1;
+    return h("div", { class: "dl-detail" },
+      h("div", { class: "muted dl-meta" }, h("span", { class: "tag " + task.severity }, SEVERITY[task.severity]), extra.join(" · ")),
+      h("div", { class: "dl-actions" },
+        showDone ? h("button", { class: "primary", onclick: done }, "Fatto") : null,
+        canSwap ? h("button", { "aria-label": "Chiedi di scambiare il turno", onclick: function () { askSwap(task); } }, "🔄 Scambia turno") : null,
+        h("button", { onclick: function () { state.editing = task.id; state.adding = false; render(); } }, "✏️ Modifica"),
+        h("button", { class: "danger ghost", onclick: remove }, "🗑 Elimina")
+      ),
+      state.swapPicking === task.id ? swapPicker(task) : null,
+      pendingSwap ? h("div", { class: "muted swap-note" }, "🔄 Scambio in attesa: " + pendingSwap.requesterName + " ↔ " + pendingSwap.targetName) : null
+    );
   }
 
   var WEEK_PREVIEW = 3;
@@ -435,7 +467,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       )
     );
     if (!tasks.length) {
-      card.appendChild(h("div", { class: "dl-empty" }, "Nessuna attivita' da mostrare."));
+      card.appendChild(h("div", { class: "dl-empty" }, "Nessuna attivita' ancora."));
       return card;
     }
 
@@ -675,44 +707,6 @@ const PAGE_TEMPLATE = `<!doctype html>
     );
   }
 
-  function taskCard(task) {
-    if (state.editing === task.id) return taskForm(task);
-    var due = task.paused ? { cls: "due-paused", text: "⏸ In pausa: " + task.assigneeName + " e' fuori casa" } : dueInfo(task);
-    function done() { api("POST", "/api/houses/" + state.houseId + "/tasks/" + task.id + "/complete").then(loadHouse).catch(fail); }
-    function remove() {
-      if (!confirm("Eliminare \\"" + task.name + "\\"?")) return;
-      var notify = state.data.house.notifyChanges ? "1" : "0";
-      api("DELETE", "/api/houses/" + state.houseId + "/tasks/" + task.id + "?notify=" + notify).then(loadHouse).catch(fail);
-    }
-    var extra = [task.frequency];
-    if (task.assignMode === "alternate") {
-      var turns = currentFirst(task);
-      extra.push(turns.length > 1 ? "a turno, poi " + (turns[1] === state.data.viewerId ? "tu" : memberName(turns[1])) : "a turno");
-    }
-    var pendingSwap = (state.data.swaps || []).filter(function (w) { return w.taskId === task.id; })[0];
-    var canSwap = task.assignMode === "alternate" && !pendingSwap && task.assignUserIds.indexOf(state.data.viewerId) >= 0 && task.assignUserIds.length > 1;
-    if (task.assignMode === "custom" && task.slots.length > 1) extra.push("poi " + task.slots[1].userName);
-    return h("div", { class: "card task" },
-      h("div", { class: "row tight" },
-        h("div", { class: "grow task-name" }, task.name),
-        h("span", { class: "tag " + task.severity }, SEVERITY[task.severity])
-      ),
-      h("div", { class: "muted task-meta" },
-        h("span", { class: "who" + (task.assigneeId === state.data.viewerId ? " me" : "") }, "👤 " + whoLabel(task)),
-        " · " + extra.join(" · ")
-      ),
-      h("div", { class: "row tight task-foot" },
-        h("div", { class: "grow " + due.cls }, due.text),
-        due.closed ? null : h("button", { class: "primary", onclick: done }, "Fatto"),
-        canSwap ? h("button", { class: "icon", title: "Scambia turno", "aria-label": "Chiedi di scambiare il turno", onclick: function () { askSwap(task); } }, "🔄") : null,
-        h("button", { class: "icon", title: "Modifica", "aria-label": "Modifica", onclick: function () { state.editing = task.id; state.adding = false; render(); } }, "✏️"),
-        h("button", { class: "icon danger ghost", title: "Elimina", "aria-label": "Elimina", onclick: remove }, "🗑")
-      ),
-      state.swapPicking === task.id ? swapPicker(task) : null,
-      pendingSwap ? h("div", { class: "muted swap-note" }, "🔄 Scambio in attesa: " + pendingSwap.requesterName + " ↔ " + pendingSwap.targetName) : null
-    );
-  }
-
   // ---------- Scambi di turno ----------
   /** "a Luca" ma "ad Anna". */
   function toName(name) { return (name.charAt(0).toLowerCase() === "a" ? "ad " : "a ") + name; }
@@ -778,15 +772,6 @@ const PAGE_TEMPLATE = `<!doctype html>
     if (t.assigneeId === state.data.viewerId) return 0;
     return t.assigneeId === null || t.assigneeId === undefined ? 1 : 2;
   }
-  // Gruppi in cui dividere la lista delle attivita': con "Prima le mie" tue / di chiunque / degli altri.
-  function taskGroups(tasks) {
-    var sorted = tasks.slice().sort(function (a, b) { return new Date(a.dueAt) - new Date(b.dueAt); });
-    if (!state.mineFirst) return [{ title: null, tasks: sorted }];
-    return [["Tue", 0], ["Di chiunque", 1], ["Degli altri", 2]].map(function (g) {
-      return { title: g[0], tasks: sorted.filter(function (t) { return ownerRank(t) === g[1]; }) };
-    }).filter(function (g) { return g.tasks.length; });
-  }
-
   function orderToggle() {
     var seg = h("div", { class: "seg", role: "tablist" });
     [[false, "Tutte"], [true, "Prima le mie"]].forEach(function (o) {
@@ -799,16 +784,11 @@ const PAGE_TEMPLATE = `<!doctype html>
     return seg;
   }
 
+  /** Scheda Attivita': la lista per scadenza (con le azioni) e il pulsante per aggiungerne una. */
   function viewTasks() {
-    var groups = taskGroups(state.data.tasks);
-    var items = [];
-    groups.forEach(function (g) {
-      if (g.title) items.push(h("div", { class: "group-title" }, g.title));
-      g.tasks.forEach(function (t) { items.push(taskCard(t)); });
-    });
     return h("div", {},
-      state.adding ? taskForm(null) : h("button", { class: "primary", onclick: function () { state.adding = true; state.editing = null; render(); } }, "+ Nuova attivita'"),
-      items.length ? items : h("p", { class: "muted" }, "Nessuna attivita' ancora.")
+      state.adding ? taskForm(null) : h("button", { class: "primary dl-add", onclick: function () { state.adding = true; state.editing = null; render(); } }, "+ Nuova attivita'"),
+      viewTimeline()
     );
   }
 
@@ -1120,7 +1100,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       onclick: function () { state.tab = "log"; render(); } }, "🧾", h("span", { class: "lbl" }, " Registro")));
 
     var view = state.tab === "members" ? viewMembers() : state.tab === "messages" ? viewMessages() : state.tab === "log" ? viewLog() : viewTasks();
-    var parts = [header, viewAbsences(), viewSwaps(), viewTimeline(), tabs, state.error ? h("p", { class: "error" }, state.error) : null, view].filter(Boolean);
+    var parts = [header, viewAbsences(), viewSwaps(), tabs, state.error ? h("p", { class: "error" }, state.error) : null, view].filter(Boolean);
     root.replaceChildren.apply(root, parts);
   }
 
