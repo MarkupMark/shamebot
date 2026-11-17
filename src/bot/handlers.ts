@@ -417,7 +417,7 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     }
   });
 
-  /** "✅ Accetto" / "❌ Rifiuto" sotto una richiesta di scambio di turno: risponde solo chi l'ha ricevuta. */
+  /** "✅ Accetto" / "❌ Rifiuto" sotto uno scambio di turno o un "Passa a...": risponde solo chi l'ha ricevuta. */
   bot.callbackQuery(/^swap:(\d+):(yes|no)$/, async (ctx) => {
     const resolved = await resolveHouse(ctx);
     if (!resolved) {
@@ -427,7 +427,7 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     const accept = ctx.match[2] === "yes";
     try {
       await service.answerSwap(resolved.house, resolved.user, Number(ctx.match[1]), accept);
-      await ctx.answerCallbackQuery({ text: accept ? "✓ Scambiato" : "Rifiutato" });
+      await ctx.answerCallbackQuery({ text: accept ? "✓ Accettato" : "Rifiutato" });
     } catch (error) {
       await ctx.answerCallbackQuery({ text: error instanceof SwapError ? error.message : "Errore", show_alert: error instanceof SwapError });
     }

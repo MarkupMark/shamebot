@@ -41,6 +41,13 @@ describe("portale", () => {
     expect(html).toContain("var parts = [header, viewAbsences(), viewSwaps(), tabs,");
   });
 
+  it("'Passa a…' chiede a un coinquilino (non fuori casa) e mostra la richiesta in cima", () => {
+    expect(html).toContain('"🤝 Passa a…"');
+    expect(html).toContain('"/handoff"');
+    expect(html).toContain("function handoffCandidates");
+    expect(html).toContain('if (w.kind === "handoff") return handoffBanner(w, base, me);');
+  });
+
   it("la frequenza 'Ogni mese' si salva come mese", () => {
     expect(html).toContain('value: "1 mese"');
     expect(html).not.toContain('value: "30 giorni"');

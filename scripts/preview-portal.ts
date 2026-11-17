@@ -33,9 +33,9 @@ const digestText = {
   evening: { intro: "🌙 Ecco cosa dovrai fare domani", body: "Domani\n• Pavimenti · entro le 14:00" },
 };
 // Scambi di turno in attesa: Anna chiede a te di scambiarvi "Buttare l'umido".
-type PreviewSwap = { id: number; taskId: number; taskName: string; requesterId: number; requesterName: string; targetId: number; targetName: string };
+type PreviewSwap = { id: number; kind: "swap" | "handoff"; taskId: number; taskName: string; requesterId: number; requesterName: string; targetId: number; targetName: string };
 let swaps: PreviewSwap[] = [
-  { id: 1, taskId: 1, taskName: "Buttare l'umido", requesterId: 2, requesterName: "Anna", targetId: 1, targetName: "Tu" },
+  { id: 1, kind: "swap", taskId: 1, taskName: "Buttare l'umido", requesterId: 2, requesterName: "Anna", targetId: 1, targetName: "Tu" },
 ];
 // Rotazioni "a turno" cambiate dagli scambi accettati (il primo e' di turno).
 const rotations: Record<number, number[]> = { 1: [1, 2], 8: [2, 1, 3] };
@@ -159,18 +159,18 @@ createServer((req, res) => {
         }
         return res.end(JSON.stringify(buildData()));
       }
-      const swapReq = url.match(/^\/api\/houses\/1\/tasks\/(\d+)\/swap$/);
+      const swapReq = url.match(/^\/api\/houses\/1\/tasks\/(\d+)\/(swap|handoff)$/);
       const swapAct = url.match(/^\/api\/houses\/1\/swaps\/(\d+)\/(accept|reject|cancel)$/);
       if (req.method === "POST" && swapReq) {
         const taskId = Number(swapReq[1]);
         const targetId = (JSON.parse(body || "{}") as { targetId?: number }).targetId ?? 0;
-        const taskName = taskId === 1 ? "Buttare l'umido" : "Pulizia cucina";
-        swaps.push({ id: Date.now(), taskId, taskName, requesterId: 1, requesterName: "Tu", targetId, targetName: names[targetId] ?? "?" });
+        const taskName = buildData().tasks.find((t) => t.id === taskId)?.name ?? "?";
+        swaps.push({ id: Date.now(), kind: swapReq[2] === "handoff" ? "handoff" : "swap", taskId, taskName, requesterId: 1, requesterName: "Tu", targetId, targetName: names[targetId] ?? "?" });
         return res.end(JSON.stringify(buildData()));
       }
       if (req.method === "POST" && swapAct) {
         const swap = swaps.find((w) => w.id === Number(swapAct[1]));
-        if (swap && swapAct[2] === "accept") {
+        if (swap && swap.kind === "swap" && swapAct[2] === "accept") {
           const ids = rotations[swap.taskId]!;
           const a = ids.indexOf(swap.requesterId);
           const b = ids.indexOf(swap.targetId);

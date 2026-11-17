@@ -129,6 +129,18 @@ export function swapRejectedMessage(target: string, taskName: string, requester?
   return `🔄 ${requester ? `${requester}, ` : ""}${target} non accetta lo scambio di turno di "${taskName}"`;
 }
 
+export function handoffRequestedMessage(requester: string, target: string, taskName: string): string {
+  return `🤝 ${requester} chiede ${toName(target)} di fare "${taskName}" al posto suo, solo per questa volta`;
+}
+
+export function handoffAcceptedMessage(target: string, taskName: string, requester: string): string {
+  return `🤝 "${taskName}": questa volta la fa ${target} al posto di ${requester}`;
+}
+
+export function handoffRejectedMessage(target: string, taskName: string, requester?: string): string {
+  return `🤝 ${requester ? `${requester}, ` : ""}${target} non accetta di fare "${taskName}" al posto tuo`;
+}
+
 export function awayEndedMessage(name: string, endedBy: string | null, moved: MovedTask[], now: Date): string {
   const lines = [`🏠 ${name} è rientrato${endedBy && endedBy !== name ? ` (segnato da ${endedBy})` : ""}`];
   for (const item of moved) {

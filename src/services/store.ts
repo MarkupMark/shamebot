@@ -2,6 +2,7 @@ import type {
   Absence,
   AbsenceStatus,
   TurnSwap,
+  TurnSwapKind,
   TurnSwapStatus,
   MovedTask,
   AppUser,
@@ -80,6 +81,7 @@ const sessionTtlMs = 30 * 24 * 60 * 60 * 1000;
  * - custom: l'utente del turno aperto con la scadenza piu' vicina (che decide anche la scadenza);
  * - single: il primo (unico) utente della lista;
  * - alternate: l'utente di turno secondo assign_turn.
+ * Un "Passa a..." accettato (handoff_user_id) vale piu' di tutti, fino al prossimo "Fatto".
  */
 const taskColumns = `
   t.*, u.display_name AS last_completed_by_name,
@@ -92,11 +94,11 @@ const taskJoins = `
   LEFT JOIN task_slots s ON t.assign_mode = 'custom' AND s.id = (
     SELECT id FROM task_slots WHERE task_id = t.id AND completed_at IS NULL ORDER BY due_at, id LIMIT 1
   )
-  LEFT JOIN users au ON au.id = CASE t.assign_mode
+  LEFT JOIN users au ON au.id = COALESCE(t.handoff_user_id, CASE t.assign_mode
     WHEN 'custom' THEN s.user_id
     WHEN 'single' THEN json_extract(t.assign_users, '$[0]')
     WHEN 'alternate' THEN json_extract(t.assign_users, '$[' || (t.assign_turn % MAX(json_array_length(t.assign_users), 1)) || ']')
-  END
+  END)
 `;
 
 const taskSelect = `SELECT ${taskColumns} FROM tasks t ${taskJoins}`;
@@ -335,10 +337,17 @@ export class HouseStore {
     return row ? mapSwap(row) : null;
   }
 
-  async createSwap(houseId: number, taskId: number, requesterId: number, targetId: number, now: Date = new Date()): Promise<TurnSwap> {
+  async createSwap(
+    houseId: number,
+    taskId: number,
+    requesterId: number,
+    targetId: number,
+    now: Date = new Date(),
+    kind: TurnSwapKind = "swap",
+  ): Promise<TurnSwap> {
     const result = await this.db.run(
-      "INSERT INTO turn_swaps (house_id, task_id, requester_id, target_id, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)",
-      [houseId, taskId, requesterId, targetId, now.toISOString()],
+      "INSERT INTO turn_swaps (house_id, task_id, requester_id, target_id, status, created_at, kind) VALUES (?, ?, ?, ?, 'pending', ?, ?)",
+      [houseId, taskId, requesterId, targetId, now.toISOString(), kind],
     );
     return (await this.getSwap(houseId, result.lastRowId)) as TurnSwap;
   }
@@ -379,6 +388,25 @@ export class HouseStore {
     );
     const names = await Promise.all([userA, userB].map(async (id) => (await this.getUserById(id))?.displayName ?? "?"));
     await this.addLog(houseId, actorId, taskId, task.name, "updated", `turno scambiato: ${names[0]} ↔ ${names[1]}`, now);
+    return this.getTask(houseId, taskId);
+  }
+
+  /**
+   * "Passa a...": da ora l'attivita' tocca a `toId` fino al prossimo "Fatto", poi torna l'assegnazione normale
+   * (a turno il turno avanza come se l'avesse fatta chi l'ha passata). null se nel frattempo non toccava piu' a `fromId`.
+   */
+  async setHandoff(houseId: number, taskId: number, fromId: number, toId: number, now: Date = new Date()): Promise<Task | null> {
+    const task = await this.getTask(houseId, taskId);
+    if (!task || task.assigneeId !== fromId) {
+      return null;
+    }
+    await this.db.run(
+      `UPDATE tasks SET handoff_user_id = ?, reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL, updated_at = ?
+       WHERE id = ? AND house_id = ?`,
+      [toId, now.toISOString(), taskId, houseId],
+    );
+    const names = await this.userNames([fromId, toId]);
+    await this.addLog(houseId, toId, taskId, task.name, "updated", `passata: ${names[0]} → ${names[1]} (solo questa volta)`, now);
     return this.getTask(houseId, taskId);
   }
 
@@ -720,6 +748,10 @@ export class HouseStore {
       } else if (beforeSlots !== (await this.slotSignature(houseId, taskId))) {
         changes.push("turni aggiornati");
       }
+      // Un "Passa a..." vale per l'assegnazione di prima: se questa cambia, decide la nuova.
+      if (changes.some((change) => change.startsWith("assegnazione") || change === "turni aggiornati")) {
+        await this.db.run("UPDATE tasks SET handoff_user_id = NULL WHERE id = ?", [taskId]);
+      }
     }
 
     if (changes.length > 0) {
@@ -782,6 +814,7 @@ export class HouseStore {
       `UPDATE tasks
        SET cycle_anchor_at = ?, last_completed_by = ?, completed_count = completed_count + 1, updated_at = ?,
            assign_turn = CASE WHEN assign_mode = 'alternate' THEN assign_turn + 1 ELSE assign_turn END,
+           handoff_user_id = NULL,
            reminder_three_hours_sent_at = NULL, reminder_thirty_minutes_sent_at = NULL,
            overdue_notice_sent_at = NULL, nudge_sent_at = NULL
        WHERE id = ? AND house_id = ?`,
@@ -1057,6 +1090,7 @@ const swapSelect = `
 function mapSwap(row: SqlRow): TurnSwap {
   return {
     id: Number(row.id),
+    kind: row.kind === "handoff" ? "handoff" : "swap",
     houseId: Number(row.house_id),
     taskId: Number(row.task_id),
     taskName: String(row.task_name),
@@ -1139,6 +1173,7 @@ function mapTask(row: SqlRow): Task {
     assigneeId: row.assignee_id === null || row.assignee_id === undefined ? null : Number(row.assignee_id),
     assigneeName: nullableString(row.assignee_name),
     assigneeTelegramId: row.assignee_telegram_id === null || row.assignee_telegram_id === undefined ? null : Number(row.assignee_telegram_id),
+    handoffUserId: row.handoff_user_id === null || row.handoff_user_id === undefined ? null : Number(row.handoff_user_id),
     slotStartsAt: nullableString(row.slot_starts_at),
     slotDueAt: nullableString(row.slot_due_at),
     createdAt: String(row.created_at),

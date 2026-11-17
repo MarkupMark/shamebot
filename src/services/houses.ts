@@ -4,6 +4,9 @@ import {
   awayApprovedMessage,
   awayEndedMessage,
   awayRequestedMessage,
+  handoffAcceptedMessage,
+  handoffRejectedMessage,
+  handoffRequestedMessage,
   sendAndGetId,
   safeSend,
   swapAcceptedMessage,
@@ -142,7 +145,49 @@ export class HouseService {
     return swap;
   }
 
-  /** Risposta di chi ha ricevuto la richiesta: se accetta, i due si invertono nella rotazione. */
+  // ---- Passa a... ----
+
+  /** Chi deve fare l'attivita' chiede a un coinquilino di farla al posto suo, solo per questa volta (Accetto / Rifiuto). */
+  async requestHandoff(house: House, actor: AppUser, taskId: number, targetId: number): Promise<TurnSwap> {
+    const task = await this.store.getTask(house.id, taskId);
+    if (!task) {
+      throw new SwapError("Attivita' non trovata.");
+    }
+    if (task.assigneeId !== actor.id) {
+      throw new SwapError("Puoi passare solo le attivita' che toccano a te.");
+    }
+    if (targetId === actor.id || !(await this.store.isMember(house.id, targetId))) {
+      throw new SwapError("Scegli un altro coinquilino della casa.");
+    }
+    if ((await this.store.awayUserIds(house.id)).has(targetId)) {
+      throw new SwapError("E' fuori casa: scegli qualcun altro.");
+    }
+    if ((await this.store.listPendingSwaps(house.id)).some((swap) => swap.taskId === taskId)) {
+      throw new SwapError("C'e' gia' una richiesta in attesa per questa attivita'.");
+    }
+
+    const request = await this.store.createSwap(house.id, taskId, actor.id, targetId, new Date(), "handoff");
+    const messageId = await sendAndGetId(
+      this.send,
+      house.chatId,
+      handoffRequestedMessage(actor.displayName, mention(request.targetName, request.targetTelegramId), task.name),
+      [
+        [
+          { text: "✅ Accetto", data: `swap:${request.id}:yes` },
+          { text: "❌ Rifiuto", data: `swap:${request.id}:no` },
+        ],
+      ],
+    );
+    if (typeof messageId === "number") {
+      await this.store.setSwapMessage(request.id, messageId);
+    }
+    return request;
+  }
+
+  /**
+   * Risposta di chi ha ricevuto la richiesta. Scambio: se accetta, i due si invertono nella rotazione.
+   * "Passa a...": se accetta, l'attivita' tocca a lui fino al prossimo "Fatto".
+   */
   async answerSwap(house: House, actor: AppUser, swapId: number, accept: boolean): Promise<Task | null> {
     const swap = await this.store.getSwap(house.id, swapId);
     if (!swap || swap.status !== "pending") {
@@ -154,7 +199,19 @@ export class HouseService {
 
     let task: Task | null = null;
     let text: string;
-    if (accept) {
+    if (swap.kind === "handoff") {
+      if (accept) {
+        task = await this.store.setHandoff(house.id, swap.taskId, swap.requesterId, swap.targetId);
+        if (!task) {
+          await this.store.resolveSwap(house.id, swapId, "cancelled");
+          await this.editOrSend(house.chatId, swap.messageId, `🤝 Richiesta per "${swap.taskName}" annullata: non tocca più a ${swap.requesterName}`);
+          throw new SwapError(`Non tocca piu' a ${swap.requesterName}: richiesta annullata.`);
+        }
+        text = handoffAcceptedMessage(actor.displayName, task.name, swap.requesterName);
+      } else {
+        text = handoffRejectedMessage(actor.displayName, swap.taskName, mention(swap.requesterName, swap.requesterTelegramId));
+      }
+    } else if (accept) {
       task = await this.store.swapRotation(house.id, swap.taskId, swap.requesterId, swap.targetId, actor.id);
       if (!task) {
         await this.store.resolveSwap(house.id, swapId, "cancelled");
@@ -183,7 +240,8 @@ export class HouseService {
     }
     await this.store.resolveSwap(house.id, swapId, "cancelled");
     if (swap.messageId !== null) {
-      await this.tryEdit(house.chatId, swap.messageId, `🔄 ${swap.requesterName}: richiesta di scambio annullata`);
+      const text = swap.kind === "handoff" ? `🤝 ${swap.requesterName}: richiesta annullata` : `🔄 ${swap.requesterName}: richiesta di scambio annullata`;
+      await this.tryEdit(house.chatId, swap.messageId, text);
     }
   }
 

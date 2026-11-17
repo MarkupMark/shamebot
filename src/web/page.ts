@@ -171,7 +171,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   var savedOrder = null, savedDlMine = null;
   try { savedOrder = localStorage.getItem("taskOrder"); savedDlMine = localStorage.getItem("dlMine"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    mineFirst: savedOrder === "mine" || savedOrder === "mineany" || savedDlMine === "1", tlExpanded: false, weekExpanded: false, openTask: null, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
+    mineFirst: savedOrder === "mine" || savedOrder === "mineany" || savedDlMine === "1", tlExpanded: false, weekExpanded: false, openTask: null, swapPicking: null, handoffPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -393,7 +393,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       : kind === "paused" ? "in pausa · fuori casa"
       : kind === "done" ? "fatta" + (task.lastCompletedByName ? " da " + task.lastCompletedByName : "") + " · si riapre " + relDay(start)
       : task.frequency + " · " + deadlineText(task);
-    function toggle() { state.openTask = open ? null : task.id; state.swapPicking = null; render(); }
+    function toggle() { state.openTask = open ? null : task.id; state.swapPicking = null; state.handoffPicking = null; render(); }
     function done() {
       api("POST", "/api/houses/" + state.houseId + "/tasks/" + task.id + "/complete")
         .then(function () { state.openTask = null; return loadHouse(); }).catch(fail);
@@ -414,12 +414,12 @@ const PAGE_TEMPLATE = `<!doctype html>
       var cls = left < DAY ? "urgent" : left < 3 * DAY || frac > 0.7 ? "soon" : "ok";
       row.appendChild(h("div", { class: "dl-track" }, h("i", { class: cls, style: "width:" + Math.max(3, frac * 100) + "%" })));
     }
-    if (open) row.appendChild(taskDetails(task, canDone && !quick, done));
+    if (open) row.appendChild(taskDetails(task, canDone, canDone && !quick, done));
     return row;
   }
 
   /** Dettaglio aperto di un'attivita': gravita', turni, scadenza e le azioni meno frequenti. */
-  function taskDetails(task, showDone, done) {
+  function taskDetails(task, canDone, showDone, done) {
     function remove() {
       if (!confirm("Eliminare «" + task.name + "»?")) return;
       var notify = state.data.house.notifyChanges ? "1" : "0";
@@ -432,19 +432,25 @@ const PAGE_TEMPLATE = `<!doctype html>
       extra.push(turns.length > 1 ? "a turno, poi " + (turns[1] === state.data.viewerId ? "tu" : memberName(turns[1])) : "a turno");
     }
     if (task.assignMode === "custom" && task.slots.length > 1) extra.push("poi " + task.slots[1].userName);
+    if (task.handedOff) extra.push("🤝 passata per questa volta");
     extra.push("scade " + when(task.dueAt));
     var pendingSwap = (state.data.swaps || []).filter(function (w) { return w.taskId === task.id; })[0];
     var canSwap = task.assignMode === "alternate" && !pendingSwap && task.assignUserIds.indexOf(state.data.viewerId) >= 0 && task.assignUserIds.length > 1;
+    var canHandoff = canDone && !pendingSwap && task.assigneeId === state.data.viewerId && handoffCandidates().length > 0;
     return h("div", { class: "dl-detail" },
       h("div", { class: "muted dl-meta" }, h("span", { class: "tag " + task.severity }, SEVERITY[task.severity]), extra.join(" · ")),
       h("div", { class: "dl-actions" },
         showDone ? h("button", { class: "primary", onclick: done }, "Fatto") : null,
+        canHandoff ? h("button", { "aria-label": "Chiedi a un coinquilino di farla al posto tuo", onclick: function () { askHandoff(task); } }, "🤝 Passa a…") : null,
         canSwap ? h("button", { "aria-label": "Chiedi di scambiare il turno", onclick: function () { askSwap(task); } }, "🔄 Scambia turno") : null,
         h("button", { onclick: function () { state.editing = task.id; state.adding = false; render(); } }, "✏️ Modifica"),
         h("button", { class: "danger ghost", onclick: remove }, "🗑 Elimina")
       ),
       state.swapPicking === task.id ? swapPicker(task) : null,
-      pendingSwap ? h("div", { class: "muted swap-note" }, "🔄 Scambio in attesa: " + pendingSwap.requesterName + " ↔ " + pendingSwap.targetName) : null
+      state.handoffPicking === task.id ? handoffPicker(task) : null,
+      pendingSwap ? h("div", { class: "muted swap-note" }, pendingSwap.kind === "handoff"
+        ? "🤝 In attesa: " + (pendingSwap.requesterId === state.data.viewerId ? "l'hai chiesta " : pendingSwap.requesterName + " l'ha chiesta ") + toName(pendingSwap.targetName)
+        : "🔄 Scambio in attesa: " + pendingSwap.requesterName + " ↔ " + pendingSwap.targetName) : null
     );
   }
 
@@ -711,12 +717,12 @@ const PAGE_TEMPLATE = `<!doctype html>
   /** "a Luca" ma "ad Anna". */
   function toName(name) { return (name.charAt(0).toLowerCase() === "a" ? "ad " : "a ") + name; }
   function swapAction(path) {
-    api("POST", "/api/houses/" + state.houseId + path).then(function (data) { state.data = data; state.error = ""; state.swapPicking = null; render(); }).catch(fail);
+    api("POST", "/api/houses/" + state.houseId + path).then(function (data) { state.data = data; state.error = ""; state.swapPicking = null; state.handoffPicking = null; render(); }).catch(fail);
   }
 
   function sendSwap(task, targetId) {
     api("POST", "/api/houses/" + state.houseId + "/tasks/" + task.id + "/swap", { targetId: targetId })
-      .then(function (data) { state.data = data; state.error = ""; state.swapPicking = null; render(); }).catch(fail);
+      .then(function (data) { state.data = data; state.error = ""; state.swapPicking = null; state.handoffPicking = null; render(); }).catch(fail);
   }
 
   /** Con due persone in rotazione chiede subito all'altra; con di piu' mostra la scelta sotto la card. */
@@ -726,6 +732,7 @@ const PAGE_TEMPLATE = `<!doctype html>
       if (confirm("Chiedere " + toName(memberName(others[0])) + " di scambiarvi il turno di «" + task.name + "»?")) sendSwap(task, others[0]);
       return;
     }
+    state.handoffPicking = null;
     state.swapPicking = state.swapPicking === task.id ? null : task.id;
     render();
   }
@@ -739,13 +746,46 @@ const PAGE_TEMPLATE = `<!doctype html>
         h("button", { class: "chip ghost", onclick: function () { state.swapPicking = null; render(); } }, "Annulla")));
   }
 
-  /** Banner in alto: richieste di scambio di turno in attesa (rispondi, annulla o solo informativo). */
+  // ---------- Passa a... ----------
+  /** Coinquilini a cui passare un'attivita': tutti tranne te e chi e' fuori casa. */
+  function handoffCandidates() {
+    var away = (state.data.absences || []).filter(function (a) { return a.status === "active"; }).map(function (a) { return a.userId; });
+    return state.data.members.filter(function (m) { return m.id !== state.data.viewerId && away.indexOf(m.id) < 0; });
+  }
+
+  function sendHandoff(task, targetId) {
+    api("POST", "/api/houses/" + state.houseId + "/tasks/" + task.id + "/handoff", { targetId: targetId })
+      .then(function (data) { state.data = data; state.error = ""; state.handoffPicking = null; render(); }).catch(fail);
+  }
+
+  /** Con un solo coinquilino chiede subito a lui; con di piu' mostra la scelta sotto il dettaglio. */
+  function askHandoff(task) {
+    var others = handoffCandidates();
+    if (others.length === 1) {
+      if (confirm("Chiedere " + toName(others[0].displayName) + " di fare «" + task.name + "» al posto tuo, solo per questa volta?")) sendHandoff(task, others[0].id);
+      return;
+    }
+    state.swapPicking = null;
+    state.handoffPicking = state.handoffPicking === task.id ? null : task.id;
+    render();
+  }
+
+  function handoffPicker(task) {
+    return h("div", { class: "swap-pick" },
+      h("div", { class: "muted", style: "font-size:.85rem" }, "Chi la fa al posto tuo, solo per questa volta?"),
+      h("div", { class: "chips" },
+        handoffCandidates().map(function (m) { return h("button", { class: "chip", onclick: function () { sendHandoff(task, m.id); } }, m.displayName); }),
+        h("button", { class: "chip ghost", onclick: function () { state.handoffPicking = null; render(); } }, "Annulla")));
+  }
+
+  /** Banner in alto: richieste di scambio di turno e "Passa a..." in attesa (rispondi, annulla o solo informativo). */
   function viewSwaps() {
     var list = state.data.swaps || [];
     if (!list.length) return null;
     var me = state.data.viewerId;
     return h("div", {}, list.map(function (w) {
       var base = "/swaps/" + w.id;
+      if (w.kind === "handoff") return handoffBanner(w, base, me);
       if (w.targetId === me) {
         return h("div", { class: "away pending" },
           h("div", { class: "grow" }, "🔄 " + w.requesterName + " ti chiede di scambiarvi il turno",
@@ -763,6 +803,25 @@ const PAGE_TEMPLATE = `<!doctype html>
         h("div", { class: "grow" }, "🔄 " + w.requesterName + " ha chiesto " + toName(w.targetName) + " di scambiarsi il turno",
           h("small", {}, "«" + w.taskName + "» · in attesa della risposta")));
     }));
+  }
+
+  function handoffBanner(w, base, me) {
+    if (w.targetId === me) {
+      return h("div", { class: "away pending" },
+        h("div", { class: "grow" }, "🤝 " + w.requesterName + " ti chiede di fare «" + w.taskName + "» al posto suo",
+          h("small", {}, "Solo per questa volta: poi torna come prima.")),
+        h("button", { class: "ghost", onclick: function () { swapAction(base + "/reject"); } }, "Rifiuto"),
+        h("button", { class: "primary", onclick: function () { swapAction(base + "/accept"); } }, "✅ Accetto"));
+    }
+    if (w.requesterId === me) {
+      return h("div", { class: "away" },
+        h("div", { class: "grow" }, "🤝 Hai chiesto " + toName(w.targetName) + " di fare «" + w.taskName + "» al posto tuo",
+          h("small", {}, "In attesa della risposta")),
+        h("button", { class: "ghost", onclick: function () { swapAction(base + "/cancel"); } }, "Annulla"));
+    }
+    return h("div", { class: "away" },
+      h("div", { class: "grow" }, "🤝 " + w.requesterName + " ha chiesto " + toName(w.targetName) + " di fare «" + w.taskName + "» al posto suo",
+        h("small", {}, "In attesa della risposta")));
   }
 
   // ---------- Viste ----------

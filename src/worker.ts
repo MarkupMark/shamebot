@@ -349,8 +349,8 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
     return jsonResponse(await buildHousePayload(store, house, user, timezoneOf(env)));
   }
 
-  // Scambi di turno: richiesta (POST tasks/:id/swap { targetId }), risposta e annullamento.
-  const swapRequest = rest.match(/^tasks\/(\d+)\/swap$/);
+  // Scambi di turno e "Passa a...": richiesta (POST tasks/:id/swap|handoff { targetId }), risposta e annullamento.
+  const swapRequest = rest.match(/^tasks\/(\d+)\/(swap|handoff)$/);
   const swapAction = rest.match(/^swaps\/(\d+)\/(accept|reject|cancel)$/);
   if (swapRequest || swapAction) {
     if (method !== "POST") {
@@ -360,9 +360,13 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
       if (swapRequest) {
         const body = await readJsonObject(request);
         if (typeof body.targetId !== "number" || !Number.isInteger(body.targetId)) {
-          throw new HttpError(400, "Scegli con chi scambiare il turno.");
+          throw new HttpError(400, swapRequest[2] === "handoff" ? "Scegli a chi passarla." : "Scegli con chi scambiare il turno.");
         }
-        await service.requestSwap(house, user, Number(swapRequest[1]), body.targetId);
+        if (swapRequest[2] === "handoff") {
+          await service.requestHandoff(house, user, Number(swapRequest[1]), body.targetId);
+        } else {
+          await service.requestSwap(house, user, Number(swapRequest[1]), body.targetId);
+        }
       } else if (swapAction![2] === "cancel") {
         await service.cancelSwap(house, user, Number(swapAction![1]));
       } else {
@@ -492,6 +496,7 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
     })),
     swaps: swaps.map((swap) => ({
       id: swap.id,
+      kind: swap.kind,
       taskId: swap.taskId,
       taskName: swap.taskName,
       requesterId: swap.requesterId,
@@ -531,6 +536,7 @@ function mapTaskView(task: Task, slots: TaskSlot[], timezone: string) {
     assignUserIds: task.assignUserIds,
     assigneeId: task.assigneeId,
     assigneeName: task.assigneeName,
+    handedOff: task.handoffUserId !== null && task.handoffUserId !== undefined,
     slots: slots.map((slot) => ({
       id: slot.id,
       userId: slot.userId,

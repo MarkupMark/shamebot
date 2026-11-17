@@ -89,6 +89,8 @@ export type Task = {
   assigneeName: string | null;
   /** Id Telegram di chi tocca, per taggarlo nei messaggi. */
   assigneeTelegramId?: number | null;
+  /** "Passa a...": chi la fa al posto dell'assegnatario fino al prossimo "Fatto" (null = nessuno). */
+  handoffUserId?: number | null;
   /** Turno personalizzato aperto con la scadenza piu' vicina: se presente decide la scadenza. */
   slotStartsAt?: string | null;
   slotDueAt?: string | null;
@@ -146,9 +148,13 @@ export type Absence = {
 
 export type TurnSwapStatus = "pending" | "accepted" | "rejected" | "cancelled";
 
-/** Richiesta di scambio di turno su un'attivita' "a turno": `target` accetta o rifiuta. */
+/** `swap`: scambio di posto nella rotazione; `handoff`: "Passa a...", il target la fa solo questa volta. */
+export type TurnSwapKind = "swap" | "handoff";
+
+/** Richiesta a un coinquilino (scambio di turno o "Passa a..."): `target` accetta o rifiuta. */
 export type TurnSwap = {
   id: number;
+  kind: TurnSwapKind;
   houseId: number;
   taskId: number;
   taskName: string;
