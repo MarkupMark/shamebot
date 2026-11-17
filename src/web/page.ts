@@ -171,7 +171,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   var savedOrder = null, savedDlMine = null;
   try { savedOrder = localStorage.getItem("taskOrder"); savedDlMine = localStorage.getItem("dlMine"); } catch (e) {}
   var state = { me: null, houseId: null, data: null, tab: "tasks", editing: null, adding: false, error: "",
-    mineFirst: savedOrder === "mine" || savedOrder === "mineany" || savedDlMine === "1", tlExpanded: false, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
+    mineFirst: savedOrder === "mine" || savedOrder === "mineany" || savedDlMine === "1", tlExpanded: false, weekExpanded: false, swapPicking: null, digestDraft: {}, insultDraft: {}, insultSev: "high" };
   var root = document.getElementById("root");
   var tg = window.Telegram && window.Telegram.WebApp;
   if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
@@ -416,6 +416,8 @@ const PAGE_TEMPLATE = `<!doctype html>
     return row;
   }
 
+  var WEEK_PREVIEW = 3;
+
   function viewTimeline() {
     var now = Date.now();
     var tasks = state.data.tasks.slice().sort(function (a, b) { return new Date(a.dueAt) - new Date(b.dueAt); });
@@ -462,7 +464,16 @@ const PAGE_TEMPLATE = `<!doctype html>
           "Piu' avanti (" + inGroup.length + ")"));
         return;
       }
-      group(g.title, g.hint, g.urgent ? "" : "soft", inGroup.map(function (t) { return dueRow(t, now, isClosed(t, now) ? "done" : g.urgent ? "open" : "soft"); }));
+      // "Entro domenica" parte collassato: si vedono le prime WEEK_PREVIEW, il resto con "Vedi tutte".
+      var hidden = g.key === "week" && !state.weekExpanded ? Math.max(0, inGroup.length - WEEK_PREVIEW) : 0;
+      var shown = hidden ? inGroup.slice(0, WEEK_PREVIEW) : inGroup;
+      group(g.title, g.hint, g.urgent ? "" : "soft", shown.map(function (t) { return dueRow(t, now, isClosed(t, now) ? "done" : g.urgent ? "open" : "soft"); }));
+      if (hidden) {
+        card.appendChild(h("button", { class: "ghost dl-more", onclick: function () { state.weekExpanded = true; render(); } },
+          "Vedi tutte (" + inGroup.length + ")"));
+      } else if (g.key === "week" && inGroup.length > WEEK_PREVIEW) {
+        card.appendChild(h("button", { class: "ghost dl-more", onclick: function () { state.weekExpanded = false; render(); } }, "Mostra meno"));
+      }
     });
     group("In pausa", "fuori casa", "soft", paused.map(function (t) { return dueRow(t, now, "paused"); }));
     if (state.tlExpanded) {

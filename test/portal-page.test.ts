@@ -24,6 +24,12 @@ describe("portale", () => {
     expect(html.match(/function orderToggle/g)).toHaveLength(1);
   });
 
+  it("'Entro domenica' parte collassato a 3 attivita' con 'Vedi tutte'", () => {
+    expect(html).toContain("var WEEK_PREVIEW = 3;");
+    expect(html).toContain("weekExpanded: false");
+    expect(html).toContain('"Vedi tutte ("');
+  });
+
   it("la frequenza 'Ogni mese' si salva come mese", () => {
     expect(html).toContain('value: "1 mese"');
     expect(html).not.toContain('value: "30 giorni"');
