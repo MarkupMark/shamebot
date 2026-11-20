@@ -56,7 +56,11 @@ export class HouseService {
   async requestAbsence(house: House, actor: AppUser): Promise<Absence> {
     const { absence, created } = await this.store.requestAbsence(house.id, actor.id);
     if (created) {
-      const messageId = await sendAndGetId(this.send, house.chatId, awayRequestedMessage(actor.displayName), [
+      const others = (await this.store.listMembers(house.id))
+        .filter((member) => member.userId !== actor.id)
+        .map((member) => mention(member.displayName, member.telegramId));
+      const text = awayRequestedMessage(mention(actor.displayName, actor.telegramId), others);
+      const messageId = await sendAndGetId(this.send, house.chatId, text, [
         [{ text: "✅ Confermo", data: `away:${absence.id}` }],
       ]);
       if (typeof messageId === "number") {

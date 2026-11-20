@@ -13,11 +13,11 @@ async function setup() {
     can_connect_to_business: false, has_main_web_app: false,
   } as typeof bot.botInfo;
 
-  const out: Array<{ method: string; text?: string; markup?: unknown }> = [];
+  const out: Array<{ method: string; text?: string; markup?: unknown; entities?: unknown }> = [];
   let nextMessageId = 100;
   bot.api.config.use(async (_prev, method, payload) => {
-    const p = payload as { text?: string; reply_markup?: unknown };
-    out.push({ method, text: p.text, markup: p.reply_markup });
+    const p = payload as { text?: string; reply_markup?: unknown; entities?: unknown };
+    out.push({ method, text: p.text, markup: p.reply_markup, entities: p.entities });
     return { ok: true, result: { message_id: nextMessageId++, date: 0, chat: { id: -100, type: "group" } } } as never;
   });
 
@@ -59,7 +59,9 @@ describe("Comandi /fuori e /rientro", () => {
 
     await say(1, "Luca", "/fuori");
     const request = out.find((call) => call.method === "sendMessage");
-    expect(request?.text).toContain("🧳 Luca è fuori casa");
+    expect(request?.text).toBe("🧳 Anna: Luca è davvero fuori casa?");
+    // Tagga Anna (chi deve confermare) e Luca.
+    expect((request?.entities as Array<{ user: { id: number } }>).map((e) => e.user.id)).toEqual([2, 1]);
     const button = JSON.stringify(request?.markup);
     const data = /away:\d+/.exec(button)?.[0] as string;
     expect(data).toBeTruthy();

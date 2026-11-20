@@ -581,7 +581,7 @@ export class HouseStore {
 
   async listMembers(houseId: number): Promise<HouseMember[]> {
     const rows = await this.db.all(
-      `SELECT u.id AS user_id, u.display_name, u.username, m.joined_at
+      `SELECT u.id AS user_id, u.telegram_id, u.display_name, u.username, m.joined_at
        FROM house_members m JOIN users u ON u.id = m.user_id
        WHERE m.house_id = ?
        ORDER BY m.joined_at`,
@@ -589,6 +589,7 @@ export class HouseStore {
     );
     return rows.map((row) => ({
       userId: Number(row.user_id),
+      telegramId: row.telegram_id === null || row.telegram_id === undefined ? null : Number(row.telegram_id),
       displayName: String(row.display_name),
       username: row.username ? String(row.username) : null,
       joinedAt: String(row.joined_at),

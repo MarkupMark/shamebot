@@ -60,6 +60,7 @@ export type House = {
 
 export type HouseMember = {
   userId: number;
+  telegramId: number | null;
   displayName: string;
   username: string | null;
   joinedAt: string;

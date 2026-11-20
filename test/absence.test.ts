@@ -33,7 +33,7 @@ describe("Fuori casa", () => {
     const { store, house, luca, anna, service, sent, edits } = await setup();
     const absence = await service.requestAbsence(house, luca);
     expect(absence.status).toBe("pending");
-    expect(sent[0]?.text).toContain("🧳 Luca è fuori casa");
+    expect(sent[0]?.text).toBe("🧳 Anna: Luca è davvero fuori casa?");
     expect(sent[0]?.buttons).toEqual([[{ text: "✅ Confermo", data: `away:${absence.id}` }]]);
     // Una seconda richiesta non ne crea un'altra.
     expect((await service.requestAbsence(house, luca)).id).toBe(absence.id);

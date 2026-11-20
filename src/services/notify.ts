@@ -104,8 +104,9 @@ export function tooEarlyMessage(task: Pick<Task, "name">, opensAt: Date, timezon
   return `👌 ${task.name} è già fatta per questo periodo · si riapre ${dayName(opensAt, timezone, now)}`;
 }
 
-export function awayRequestedMessage(name: string): string {
-  return `🧳 ${name} è fuori casa\nServe l'ok di un coinquilino: poi le sue attività vanno in pausa.`;
+/** Chiede agli altri coinquilini (taggati) se `name` e' davvero fuori casa. */
+export function awayRequestedMessage(name: string, others: string[] = []): string {
+  return `🧳 ${others.length ? `${others.join(", ")}: ` : ""}${name} è davvero fuori casa?`;
 }
 
 export function awayApprovedMessage(name: string, approver: string): string {
