@@ -326,7 +326,7 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
     return jsonResponse(await buildHousePayload(store, house, user, timezoneOf(env)), { status: 201 });
   }
 
-  const absenceMatch = rest.match(/^absences\/(\d+)\/(approve|cancel|end)$/);
+  const absenceMatch = rest.match(/^absences\/(\d+)\/(approve|reject|cancel|end)$/);
   if (absenceMatch) {
     if (method !== "POST") {
       return methodNotAllowed(["POST"]);
@@ -335,6 +335,8 @@ async function routeApi(request: Request, env: WorkerEnv, url: URL, siteUrl: str
     try {
       if (absenceMatch[2] === "approve") {
         await service.approveAbsence(house, user, absenceId);
+      } else if (absenceMatch[2] === "reject") {
+        await service.rejectAbsence(house, user, absenceId);
       } else if (absenceMatch[2] === "cancel") {
         await service.cancelAbsence(house, user, absenceId);
       } else {
@@ -458,7 +460,8 @@ async function buildHousePayload(store: HouseStore, house: House, viewer: AppUse
     store.listOpenAbsences(house.id),
     store.listPendingSwaps(house.id),
   ]);
-  const away = new Set(absences.filter((absence) => absence.status === "active").map((absence) => absence.userId));
+  // In attesa di conferma conta gia' come in pausa: il tempo si ferma dalla richiesta.
+  const away = new Set(absences.map((absence) => absence.userId));
 
   const digestViews = await Promise.all(
     digestKindValues.map(async (kind) => {

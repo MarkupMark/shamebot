@@ -3,6 +3,7 @@ import type { AssignmentInput, HouseStore, TaskUpdateInput } from "./store.js";
 import {
   awayApprovedMessage,
   awayEndedMessage,
+  awayRejectedMessage,
   awayRequestedMessage,
   handoffAcceptedMessage,
   handoffRejectedMessage,
@@ -61,7 +62,10 @@ export class HouseService {
         .map((member) => mention(member.displayName, member.telegramId));
       const text = awayRequestedMessage(mention(actor.displayName, actor.telegramId), others);
       const messageId = await sendAndGetId(this.send, house.chatId, text, [
-        [{ text: "✅ Confermo", data: `away:${absence.id}` }],
+        [
+          { text: "✅ Confermo", data: `away:${absence.id}` },
+          { text: "❌ Non è vero", data: `away:${absence.id}:no` },
+        ],
       ]);
       if (typeof messageId === "number") {
         await this.store.setAbsenceMessage(absence.id, messageId);
@@ -87,6 +91,23 @@ export class HouseService {
       await safeSend(this.send, house.chatId, text);
     }
     return approved;
+  }
+
+  /** Un altro coinquilino rifiuta: il tempo non si e' mai fermato, avvisi e scadenze riprendono come prima. */
+  async rejectAbsence(house: House, actor: AppUser, absenceId: number): Promise<void> {
+    const absence = await this.store.getAbsence(house.id, absenceId);
+    if (!absence || absence.status !== "pending") {
+      throw new AbsenceError(absence?.status === "active" ? "Gia' confermata." : "Richiesta non trovata.");
+    }
+    if (absence.userId === actor.id) {
+      throw new AbsenceError("Deve rispondere un altro coinquilino.");
+    }
+    await this.store.rejectAbsence(house.id, absenceId, actor.id);
+    const text = awayRejectedMessage(absence.userName, actor.displayName);
+    const edited = absence.messageId !== null && (await this.tryEdit(house.chatId, absence.messageId, text));
+    if (!edited) {
+      await safeSend(this.send, house.chatId, text);
+    }
   }
 
   /** Annulla una richiesta non ancora confermata (solo chi l'ha fatta). */

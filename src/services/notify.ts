@@ -106,7 +106,11 @@ export function tooEarlyMessage(task: Pick<Task, "name">, opensAt: Date, timezon
 
 /** Chiede agli altri coinquilini (taggati) se `name` e' davvero fuori casa. */
 export function awayRequestedMessage(name: string, others: string[] = []): string {
-  return `🧳 ${others.length ? `${others.join(", ")}: ` : ""}${name} è davvero fuori casa?`;
+  return `🧳 ${others.length ? `${others.join(", ")}: ` : ""}${name} è davvero fuori casa?\nIntanto le sue attività sono in pausa.`;
+}
+
+export function awayRejectedMessage(name: string, rejecter: string): string {
+  return `🧳 ${name} non è fuori casa · secondo ${rejecter}\nLe sue attività ripartono.`;
 }
 
 export function awayApprovedMessage(name: string, approver: string): string {

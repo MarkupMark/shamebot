@@ -59,7 +59,7 @@ describe("Comandi /fuori e /rientro", () => {
 
     await say(1, "Luca", "/fuori");
     const request = out.find((call) => call.method === "sendMessage");
-    expect(request?.text).toBe("🧳 Anna: Luca è davvero fuori casa?");
+    expect(request?.text).toBe("🧳 Anna: Luca è davvero fuori casa?\nIntanto le sue attività sono in pausa.");
     // Tagga Anna (chi deve confermare) e Luca.
     expect((request?.entities as Array<{ user: { id: number } }>).map((e) => e.user.id)).toEqual([2, 1]);
     const button = JSON.stringify(request?.markup);

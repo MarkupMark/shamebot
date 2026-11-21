@@ -749,7 +749,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   // ---------- Passa a... ----------
   /** Coinquilini a cui passare un'attivita': tutti tranne te e chi e' fuori casa. */
   function handoffCandidates() {
-    var away = (state.data.absences || []).filter(function (a) { return a.status === "active"; }).map(function (a) { return a.userId; });
+    var away = (state.data.absences || []).map(function (a) { return a.userId; });
     return state.data.members.filter(function (m) { return m.id !== state.data.viewerId && away.indexOf(m.id) < 0; });
   }
 
@@ -895,9 +895,10 @@ const PAGE_TEMPLATE = `<!doctype html>
       if (a.status === "pending") {
         return h("div", { class: "away pending" },
           h("div", { class: "grow" }, mine ? "🧳 Hai detto che sei fuori casa" : "🧳 " + a.userName + " dice di essere fuori casa",
-            h("small", {}, mine ? "Serve l'ok di un coinquilino, poi le tue attivita' vanno in pausa." : "Se e' vero conferma: le sue attivita' andranno in pausa.")),
-          mine ? h("button", { class: "ghost", onclick: function () { absenceAction(base + "/cancel"); } }, "Annulla")
-               : h("button", { class: "primary", onclick: function () { absenceAction(base + "/approve"); } }, "✅ Confermo")
+            h("small", {}, mine ? "Le tue attivita' sono in pausa da ora; se nessuno conferma ripartono." : "Intanto le sue attivita' sono in pausa. Se non e' vero rifiuta e ripartono.")),
+          mine ? h("button", { class: "ghost", onclick: function () { absenceAction(base + "/cancel"); } }, "Annulla") : null,
+          mine ? null : h("button", { class: "ghost", onclick: function () { absenceAction(base + "/reject"); } }, "Non e' vero"),
+          mine ? null : h("button", { class: "primary", onclick: function () { absenceAction(base + "/approve"); } }, "✅ Confermo")
         );
       }
       return h("div", { class: "away" },
@@ -913,7 +914,7 @@ const PAGE_TEMPLATE = `<!doctype html>
   function awayCard() {
     var open = (state.data.absences || []).filter(function (a) { return a.userId === state.data.viewerId; })[0];
     return h("div", { class: "card" },
-      h("p", { style: "margin:0 0 6px" }, "Vai via qualche giorno? Dillo qui: quando un coinquilino conferma, le attivita' che toccano a te vanno in pausa (niente avvisi ne' insulti)."),
+      h("p", { style: "margin:0 0 6px" }, "Vai via qualche giorno? Dillo qui: le attivita' che toccano a te vanno subito in pausa (niente avvisi ne' insulti). Se un coinquilino conferma la pausa vale dal momento della richiesta, se rifiuta ripartono come prima."),
       h("p", { class: "muted", style: "margin:0 0 10px" }, "Al rientro, quelle scadute mentre eri via vanno fatte entro la fine di quel giorno; le altre slittano di tutti i giorni in cui sei stato fuori. Il rientro lo segni tu o un coinquilino. Dal gruppo Telegram: /fuori e /rientro."),
       open ? h("p", { class: "muted", style: "margin:0" }, open.status === "pending" ? "Richiesta inviata: aspetta l'ok di un coinquilino (lo vedi in alto)." : "Sei fuori casa: quando torni premi «Sono rientrato» in alto.")
            : h("button", { class: "primary", onclick: function () { absenceAction("/absences", "Avvisare il gruppo che sei fuori casa?"); } }, "🧳 Sono fuori casa")

@@ -49,8 +49,10 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   anche dal portale). Se accetta tocca a lui fino al suo *Fatto*, poi si torna all'assegnazione normale (a turno il turno
   avanza come se l'avessi fatta tu). Se intanto l'assegnazione cambia, il passaggio decade.
 - **Fuori casa.** Dal portale (scheda Membri) o con `/fuori` un coinquilino dice "🧳 Sono fuori casa"; nel gruppo compare la richiesta con il pulsante
-  "✅ Confermo" e serve l'ok di un **altro** coinquilino (dal gruppo o dal portale). Da quel momento le attivita' che
-  toccano a lui sono in pausa: niente promemoria, avvisi o insulti. Al rientro (lo segna lui o chiunque, dal portale o con `/rientro [nome]`) le
+  "✅ Confermo" / "❌ Non è vero" e serve l'ok di un **altro** coinquilino (dal gruppo o dal portale). Le attivita' che
+  toccano a lui vanno in pausa **subito, dal momento della richiesta**: niente promemoria, avvisi o insulti (nemmeno nel
+  riepilogo serale) mentre gli altri decidono. Se confermano la pausa vale dalla richiesta; se rifiutano (o lui annulla)
+  il tempo riparte come se nulla fosse e gli avvisi arretrati arrivano al controllo successivo. Al rientro (lo segna lui o chiunque, dal portale o con `/rientro [nome]`) le
   attivita' scadute mentre era via vanno fatte entro la fine di quel giorno, le altre slittano di tutto il tempo in cui
   e' stato fuori. Le attivita' di "chiunque" non vanno in pausa.
 - **Insulti segreti.** Ogni coinquilino scrive dal portale (scheda Messaggi) i suoi insulti per attivita' poco importanti,
@@ -84,7 +86,7 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
 | `/modifica n \| nome \| frequenza \| gravita'` | `-` lascia invariato un campo |
 | `/elimina n` | Elimina un'attivita' |
 | `/log [n]` | Ultime attivita' svolte e modifiche |
-| `/fuori` | Sei fuori casa: un altro coinquilino conferma col pulsante, poi le tue attivita' vanno in pausa |
+| `/fuori` | Sei fuori casa: le tue attivita' vanno subito in pausa, un altro coinquilino conferma (o rifiuta) col pulsante |
 | `/rientro [nome]` | Rientro (tuo o di un coinquilino): sposta le scadenze |
 | `/notifiche on\|off` | Avvisi sulle modifiche |
 | `/membri`, `/casa`, `/app`, `/help` | Info e aiuto |

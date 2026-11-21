@@ -402,14 +402,19 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     await ctx.editMessageText(text, keyboard ? { reply_markup: keyboard } : {}).catch(() => undefined);
   });
 
-  /** "✅ Confermo" sotto la richiesta "sono fuori casa". */
-  bot.callbackQuery(/^away:(\d+)$/, async (ctx) => {
+  /** "✅ Confermo" / "❌ Non è vero" sotto la richiesta "sono fuori casa". */
+  bot.callbackQuery(/^away:(\d+)(:no)?$/, async (ctx) => {
     const resolved = await resolveHouse(ctx);
     if (!resolved) {
       await ctx.answerCallbackQuery();
       return;
     }
     try {
+      if (ctx.match[2]) {
+        await service.rejectAbsence(resolved.house, resolved.user, Number(ctx.match[1]));
+        await ctx.answerCallbackQuery({ text: "✓ Rifiutato" });
+        return;
+      }
       await service.approveAbsence(resolved.house, resolved.user, Number(ctx.match[1]));
       await ctx.answerCallbackQuery({ text: "✓ Confermato" });
     } catch (error) {
@@ -569,7 +574,7 @@ export function createBotApp({ store, botToken, siteUrl, timezone, sendMessages 
     if (open) {
       await ctx.reply(
         open.status === "pending"
-          ? "🧳 Hai già chiesto: serve l'ok di un coinquilino (pulsante ✅ Confermo)."
+          ? "🧳 Hai già chiesto: le tue attività sono in pausa finché un coinquilino risponde."
           : "🧳 Sei già fuori casa. Quando torni: /rientro",
       );
       return;

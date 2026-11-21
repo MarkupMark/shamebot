@@ -222,14 +222,17 @@ export class HouseStore {
     return row ? mapAbsence(row) : null;
   }
 
-  /** Coinquilini fuori casa (assenza confermata) per ogni casa: le loro attivita' sono in pausa. */
+  /**
+   * Coinquilini fuori casa per ogni casa: le loro attivita' sono in pausa. Conta anche chi ha chiesto
+   * e aspetta l'ok: il tempo e' fermo dalla richiesta (se viene rifiutata riparte come se nulla fosse).
+   */
   async listAwayUsers(): Promise<Set<string>> {
-    const rows = await this.db.all("SELECT house_id, user_id FROM absences WHERE status = 'active'");
+    const rows = await this.db.all("SELECT house_id, user_id FROM absences WHERE status IN ('pending', 'active')");
     return new Set(rows.map((row) => awayKey(Number(row.house_id), Number(row.user_id))));
   }
 
   async awayUserIds(houseId: number): Promise<Set<number>> {
-    const rows = await this.db.all("SELECT user_id FROM absences WHERE house_id = ? AND status = 'active'", [houseId]);
+    const rows = await this.db.all("SELECT user_id FROM absences WHERE house_id = ? AND status IN ('pending', 'active')", [houseId]);
     return new Set(rows.map((row) => Number(row.user_id)));
   }
 
@@ -262,6 +265,15 @@ export class HouseStore {
     const result = await this.db.run(
       "UPDATE absences SET status = 'cancelled', ended_at = ? WHERE house_id = ? AND id = ? AND status = 'pending'",
       [now.toISOString(), houseId, absenceId],
+    );
+    return result.changes > 0;
+  }
+
+  /** Un altro coinquilino dice che non e' vero: la richiesta si chiude e le scadenze restano quelle di prima. */
+  async rejectAbsence(houseId: number, absenceId: number, rejectedBy: number, now: Date = new Date()): Promise<boolean> {
+    const result = await this.db.run(
+      "UPDATE absences SET status = 'cancelled', ended_by = ?, ended_at = ? WHERE house_id = ? AND id = ? AND status = 'pending' AND user_id <> ?",
+      [rejectedBy, now.toISOString(), houseId, absenceId, rejectedBy],
     );
     return result.changes > 0;
   }

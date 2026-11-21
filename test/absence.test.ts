@@ -3,6 +3,7 @@ import { plainText } from "../src/utils/mention.js";
 import { getDueAt } from "../src/services/policy.js";
 import { runDueChecks } from "../src/services/scheduler.js";
 import { AbsenceError, HouseService } from "../src/services/houses.js";
+import { composeDigest } from "../src/services/digest.js";
 import { anchorAtCreation, createTestStore, day, hour } from "./helpers.js";
 
 const tz = "Europe/Rome";
@@ -33,8 +34,13 @@ describe("Fuori casa", () => {
     const { store, house, luca, anna, service, sent, edits } = await setup();
     const absence = await service.requestAbsence(house, luca);
     expect(absence.status).toBe("pending");
-    expect(sent[0]?.text).toBe("🧳 Anna: Luca è davvero fuori casa?");
-    expect(sent[0]?.buttons).toEqual([[{ text: "✅ Confermo", data: `away:${absence.id}` }]]);
+    expect(sent[0]?.text).toBe("🧳 Anna: Luca è davvero fuori casa?\nIntanto le sue attività sono in pausa.");
+    expect(sent[0]?.buttons).toEqual([
+      [
+        { text: "✅ Confermo", data: `away:${absence.id}` },
+        { text: "❌ Non è vero", data: `away:${absence.id}:no` },
+      ],
+    ]);
     // Una seconda richiesta non ne crea un'altra.
     expect((await service.requestAbsence(house, luca)).id).toBe(absence.id);
     expect(sent.length).toBe(1);
@@ -107,5 +113,51 @@ describe("Fuori casa", () => {
     expect(moved.length).toBe(1);
     expect(sent[sent.length - 1]?.text.split("\n")[0]).toBe("🏠 Luca è rientrato (segnato da Anna)");
     await expect(service.endAbsence(house, anna, absence.id, tz)).rejects.toBeInstanceOf(AbsenceError);
+  });
+
+  it("dalla richiesta il tempo e' fermo: niente avvisi ne' riepilogo serale mentre si aspetta l'ok", async () => {
+    const { store, house, luca, anna } = await setup();
+    const start = new Date("2026-11-01T10:00:00.000Z");
+    await store.createTask(house.id, luca.id, "Bagno", day, "high", start, null, { mode: "single", userIds: [luca.id] });
+    await store.createTask(house.id, luca.id, "Umido", day, "high", start, null, { mode: "single", userIds: [anna.id] });
+    await store.requestAbsence(house.id, luca.id, start);
+
+    const sent: string[] = [];
+    await runDueChecks(store, async (_c, text) => void sent.push(plainText(text)), new Date("2026-11-03T10:00:00.000Z"), first);
+    expect(sent.length).toBe(1);
+    expect(sent[0]).toContain("Umido");
+    const evening = await composeDigest(store, house, "evening", { intro: "" }, new Date("2026-11-03T19:00:00.000Z"), tz);
+    expect(evening.text).not.toContain("Bagno");
+  });
+
+  it("se confermano, le scadenze slittano a partire dalla richiesta (non dall'ok)", async () => {
+    const { store, db, house, luca, anna } = await setup();
+    const created = new Date("2026-11-01T09:00:00.000Z");
+    const task = await store.createTask(house.id, luca.id, "Vetri", 10 * day, "low", created, null, { mode: "single", userIds: [luca.id] });
+    await anchorAtCreation(db);
+    const asked = new Date("2026-11-02T09:00:00.000Z");
+    const { absence } = await store.requestAbsence(house.id, luca.id, asked);
+    await store.approveAbsence(house.id, absence.id, anna.id, new Date("2026-11-03T09:00:00.000Z"));
+    await store.endAbsence(house.id, absence.id, luca.id, new Date("2026-11-05T09:00:00.000Z"), tz);
+    // 3 giorni dalla richiesta, non 2 dall'ok.
+    expect(getDueAt((await store.getTask(house.id, task.id))!).toISOString()).toBe("2026-11-14T09:00:00.000Z");
+  });
+
+  it("se un altro rifiuta, il tempo riparte come se nulla fosse e arrivano gli avvisi", async () => {
+    const { store, house, luca, anna, service, edits } = await setup();
+    const start = new Date(Date.now() - 2 * day);
+    const task = await store.createTask(house.id, luca.id, "Bagno", day, "high", start, null, { mode: "single", userIds: [luca.id] });
+    const dueBefore = getDueAt(task).toISOString();
+    const absence = await service.requestAbsence(house, luca);
+    await expect(service.rejectAbsence(house, luca, absence.id)).rejects.toBeInstanceOf(AbsenceError);
+    await service.rejectAbsence(house, anna, absence.id);
+    expect(edits[0]).toBe("🧳 Luca non è fuori casa · secondo Anna\nLe sue attività ripartono.");
+    expect(await store.listOpenAbsences(house.id)).toEqual([]);
+    expect(getDueAt((await store.getTask(house.id, task.id))!).toISOString()).toBe(dueBefore);
+    await expect(service.approveAbsence(house, anna, absence.id)).rejects.toBeInstanceOf(AbsenceError);
+
+    const sent: string[] = [];
+    await runDueChecks(store, async (_c, text) => void sent.push(plainText(text)), new Date(), first);
+    expect(sent.some((text) => text.includes("Bagno"))).toBe(true);
   });
 });
