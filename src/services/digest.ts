@@ -3,6 +3,7 @@ import type { HouseStore } from "./store.js";
 import { getDueAt } from "./policy.js";
 import { isTooEarly } from "./periods.js";
 import { assigneeTag, deadlineDay, safeSend, type SendToChat } from "./notify.js";
+import { mention } from "../utils/mention.js";
 import { formatShortDuration } from "../utils/duration.js";
 import { sortTasksByDueDate } from "../utils/tasks.js";
 
@@ -39,8 +40,12 @@ function until(at: Date, timezone: string): string {
 
 // ---- Testo ----
 
-function who(task: Task): string {
-  const assignee = assigneeTag(task);
+/**
+ * A chi tocca. Per le attivita' di "chiunque" non tagga nessuno, salvo quando qualcuno e' fuori casa:
+ * allora tagga chi e' rimasto (`present`), perche' tocca a loro.
+ */
+function who(task: Task, present?: string[]): string {
+  const assignee = assigneeTag(task) ?? (present?.length ? present.join(", ") : null);
   return assignee ? ` · 👤 ${assignee}` : "";
 }
 
@@ -48,6 +53,8 @@ export type DigestMessage = {
   text: string;
   /** true se non c'e' niente da segnalare (con skipIfEmpty il messaggio non parte). */
   empty: boolean;
+  /** true se sono tutti fuori casa: il messaggio non parte mai. */
+  nobodyHome?: boolean;
 };
 
 /**
@@ -61,6 +68,8 @@ export function buildDigest(
   tasks: Task[],
   now: Date,
   timezone: string,
+  /** Tag di chi e' in casa, solo quando qualcuno e' fuori: usati per le attivita' di "chiunque". */
+  present?: string[],
 ): DigestMessage {
   const midnight = localMidnight(now, timezone);
   const endOfToday = localMidnight(new Date(midnight.getTime() + dayMs + 2 * 60 * 60 * 1000), timezone);
@@ -80,20 +89,20 @@ export function buildDigest(
       .filter((task) => getDueAt(task) > endOfTomorrow && !isTooEarly(getDueAt(task), now, task.intervalMs, timezone))
       .slice(0, morningSuggestions);
     if (late.length) {
-      sections.push(["In ritardo", ...late.map((t) => `• ${t.name} · da ${formatShortDuration(now.getTime() - getDueAt(t).getTime())}${who(t)}`)].join("\n"));
+      sections.push(["In ritardo", ...late.map((t) => `• ${t.name} · da ${formatShortDuration(now.getTime() - getDueAt(t).getTime())}${who(t, present)}`)].join("\n"));
     }
     if (today.length) {
-      sections.push(["Oggi", ...today.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
+      sections.push(["Oggi", ...today.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t, present)}`)].join("\n"));
     }
     if (tomorrow.length) {
-      sections.push(["Domani", ...tomorrow.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t)}`)].join("\n"));
+      sections.push(["Domani", ...tomorrow.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t, present)}`)].join("\n"));
     }
     empty = sections.length === 0;
     if (empty) {
       sections.push("Oggi e domani niente in scadenza 🎉");
     }
     if (later.length) {
-      sections.push(["Se vuoi fare altro oggi:", ...later.map((t) => `• ${t.name} · entro ${deadlineDay(getDueAt(t), timezone, now)}${who(t)}`)].join("\n"));
+      sections.push(["Se vuoi fare altro oggi:", ...later.map((t) => `• ${t.name} · entro ${deadlineDay(getDueAt(t), timezone, now)}${who(t, present)}`)].join("\n"));
     }
   } else {
     const tomorrow = sorted.filter((task) => getDueAt(task) > endOfToday && getDueAt(task) <= endOfTomorrow);
@@ -101,7 +110,7 @@ export function buildDigest(
     sections.push(
       empty
         ? "Domani niente in scadenza 🎉"
-        : ["Domani", ...tomorrow.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t)}`)].join("\n"),
+        : ["Domani", ...tomorrow.map((t) => `• ${t.name} · ${until(getDueAt(t), timezone)}${who(t, present)}`)].join("\n"),
     );
   }
 
@@ -119,8 +128,23 @@ export async function composeDigest(
   timezone: string,
 ): Promise<DigestMessage> {
   // Le attivita' di chi e' fuori casa sono in pausa: non compaiono nei promemoria.
-  const [tasks, away] = await Promise.all([store.listTasks(house.id), store.awayUserIds(house.id)]);
-  return buildDigest(kind, settings, tasks.filter((task) => task.assigneeId === null || !away.has(task.assigneeId)), now, timezone);
+  const [tasks, away, members] = await Promise.all([
+    store.listTasks(house.id),
+    store.awayUserIds(house.id),
+    store.listMembers(house.id),
+  ]);
+  const present = members.filter((member) => !away.has(member.userId));
+  if (members.length > 0 && present.length === 0) {
+    return { text: "🧳 Sono tutti fuori casa: niente promemoria", empty: true, nobodyHome: true };
+  }
+  return buildDigest(
+    kind,
+    settings,
+    tasks.filter((task) => task.assigneeId === null || !away.has(task.assigneeId)),
+    now,
+    timezone,
+    away.size ? present.map((member) => mention(member.displayName, member.telegramId)) : undefined,
+  );
 }
 
 // ---- Invio pianificato ----
@@ -150,7 +174,7 @@ export async function runDigests(store: HouseStore, send: SendToChat, now: Date,
       }
 
       const message = await composeDigest(store, house, settings.kind, settings, now, timezone);
-      if (message.empty && settings.skipIfEmpty) {
+      if (message.nobodyHome || (message.empty && settings.skipIfEmpty)) {
         await store.markDigestHandled(house.id, settings.kind, date);
         continue;
       }

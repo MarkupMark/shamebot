@@ -166,3 +166,41 @@ describe("runDigests", () => {
     expect(sent[0]?.startsWith("Buonanotte")).toBe(true);
   });
 });
+
+describe("Promemoria con qualcuno fuori casa", () => {
+  async function house2() {
+    const { store, db } = createTestStore();
+    const luca = await store.upsertUser({ telegramId: 1, username: "luca", displayName: "Luca" });
+    const anna = await store.upsertUser({ telegramId: 2, username: null, displayName: "Anna" });
+    const { house } = await store.getOrCreateHouse(-100, "Casa", luca.id);
+    await store.addMember(house.id, luca.id);
+    await store.addMember(house.id, anna.id);
+    await store.updateDigest(house.id, "morning", { enabled: true, time: "09:00", skipIfEmpty: false });
+    await store.updateDigest(house.id, "evening", { enabled: false });
+    return { store, db, house, luca, anna };
+  }
+  const morning = new Date("2026-11-06T08:00:00.000Z"); // 09:00 a Roma
+
+  it("se sono tutti fuori il buongiorno non parte", async () => {
+    const { store, house, luca, anna } = await house2();
+    await store.createTask(house.id, luca.id, "Umido", day, "high", new Date(morning.getTime() - 2 * hour));
+    await store.requestAbsence(house.id, luca.id, morning);
+    await store.requestAbsence(house.id, anna.id, morning);
+    const { sent, send } = collector();
+    expect(await runDigests(store, send, morning, tz)).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
+  it("le attivita' di chiunque taggano solo chi e' rimasto in casa", async () => {
+    const { store, db, house, luca, anna } = await house2();
+    await store.createTask(house.id, luca.id, "Umido", 3 * hour, "high", morning);
+    await store.createTask(house.id, luca.id, "Bagno", 5 * hour, "high", morning, null, { mode: "single", userIds: [luca.id] });
+    await anchorAtCreation(db);
+    await store.requestAbsence(house.id, luca.id, morning);
+    const { sent, send } = collector();
+    expect(await runDigests(store, send, morning, tz)).toBe(1);
+    expect(sent[0]).toContain("Umido · entro le 12:00 · 👤 Anna");
+    expect(sent[0]).not.toContain("Bagno");
+    void anna;
+  });
+});

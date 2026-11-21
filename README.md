@@ -63,7 +63,8 @@ e tiene un registro di chi ha fatto cosa. La "vergogna" e' solo interna alla cas
   "se vuoi fare altro oggi" con le prossime 3 attivita' in scadenza; predefinito alle 9:00, attivo) e 🌙 *Riepilogo serale* (cosa dovrai fare
   domani; predefinito alle 21:00, spento). Dalla scheda Messaggi del portale si accendono, si sceglie l'ora e si personalizza
   la frase iniziale: l'elenco sotto e' sempre automatico. Partono una volta al giorno e, se non c'e' niente da segnalare,
-  di default non partono.
+  di default non partono. Se sono tutti fuori casa non partono mai; se qualcuno e' fuori, le attivita' di "chiunque"
+  taggano solo chi e' rimasto in casa.
 - **Registro.** Ogni attivita' fatta, creata, modificata o eliminata finisce nel log (`/log` o portale).
 - **Login al portale.** "Accedi con Telegram" mostra un codice di 6 cifre (valido 10 minuti): lo si invia al bot in
   chat privata (da solo o con `/login 123456`, anche dal telefono) e il sito entra da solo. Il link diretto al bot
